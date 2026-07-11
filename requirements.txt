@@ -1,0 +1,71 @@
+# Core
+python-dotenv
+pydantic
+requests
+tqdm
+
+# LangChain
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+
+# LLM Providers
+langchain-openai
+langchain-groq
+langchain-google-genai
+langchain-huggingface
+
+# Hugging Face
+transformers
+sentence-transformers
+huggingface-hub
+accelerate
+
+# Embeddings
+tiktoken
+
+# Vector Databases
+faiss-cpu
+chromadb
+
+# PDF & Document Loaders
+pypdf
+pymupdf
+unstructured
+python-docx
+openpyxl
+
+# RAG
+rank-bm25
+
+# API Framework
+fastapi
+uvicorn
+
+# Frontend
+streamlit
+streamlit-chat
+
+# Data
+pandas
+numpy
+
+# Tokenizer
+tokenizers
+
+# Local LLM
+ollama
+
+# Utilities
+httpx
+aiofiles
+typing-extensions
+
+# Notebook
+jupyter
+ipykernel
+
+# Environment
+setuptools
+wheel

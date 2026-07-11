@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>My PDF Chatbot</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-base: #0f172a;
+            --bg-glass: rgba(30, 41, 59, 0.65);
+            --bg-glass-hover: rgba(51, 65, 85, 0.75);
+            --border-glass: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.4);
+            --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            --error: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --glass-blur: blur(16px);
+            --shadow-float: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', sans-serif; background-color: var(--bg-base);
+            background-image: radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.15), transparent 25%),
+                              radial-gradient(circle at 85% 30%, rgba(168, 85, 247, 0.15), transparent 25%);
+            color: var(--text-main); height: 100vh; display: flex; overflow: hidden;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+        button { cursor: pointer; border: none; background: transparent; color: inherit; font-family: inherit; transition: var(--transition); }
+        svg { width: 20px; height: 20px; fill: currentColor; }
+
+        .sidebar {
+            width: 280px; height: 100%; background: var(--bg-glass);
+            backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+            border-right: 1px solid var(--border-glass); display: flex; flex-direction: column;
+            padding: 20px; z-index: 10; transition: var(--transition);
+        }
+        .sidebar.hidden { transform: translateX(-100%); margin-left: -280px; }
+
+        .new-chat-btn {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            width: 100%; padding: 12px; background: var(--accent-gradient);
+            border-radius: var(--radius-md); font-weight: 500; color: #fff;
+            box-shadow: 0 4px 15px var(--accent-glow); margin-bottom: 24px;
+        }
+        .new-chat-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        .doc-status-card {
+            background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass);
+            border-radius: var(--radius-md); padding: 12px; margin-bottom: 20px;
+        }
+        .doc-status-card h4 { font-size: 0.85rem; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;}
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+        .status-dot.ready { background: var(--success); box-shadow: 0 0 8px var(--success); }
+        .doc-status-card p { font-size: 0.75rem; color: var(--text-muted); word-break: break-all; margin-left: 14px;}
+
+        .main-content { flex: 1; display: flex; flex-direction: column; position: relative; height: 100%; }
+        .navbar {
+            height: 64px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between;
+            background: rgba(15, 23, 42, 0.4); backdrop-filter: var(--glass-blur); border-bottom: 1px solid var(--border-glass); z-index: 5;
+        }
+        .nav-left { display: flex; align-items: center; gap: 16px; font-weight: 600; }
+        .icon-btn { padding: 8px; border-radius: 8px; background: var(--bg-glass); border: 1px solid var(--border-glass); display: flex; align-items: center; justify-content: center; }
+        .icon-btn:hover { background: var(--bg-glass-hover); }
+
+        .chat-area { flex: 1; padding: 24px; overflow-y: auto; scroll-behavior: smooth; }
+        .chat-container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+
+        .message-row { display: flex; gap: 16px; animation: slideUp 0.3s ease-out forwards; opacity: 0; }
+        .message-row.user { flex-direction: row-reverse; }
+
+        .avatar { width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .message-row.ai .avatar { background: var(--bg-glass); border: 1px solid var(--border-glass); }
+        .message-row.user .avatar { background: var(--accent-gradient); color: #fff; }
+
+        .message-content { max-width: 80%; display: flex; flex-direction: column; gap: 6px; }
+        .message-row.user .message-content { align-items: flex-end; }
+
+        .bubble { padding: 16px 20px; border-radius: var(--radius-lg); font-size: 0.95rem; line-height: 1.6; box-shadow: var(--shadow-float); }
+        .message-row.ai .bubble { background: var(--bg-glass); backdrop-filter: var(--glass-blur); border: 1px solid var(--border-glass); border-top-left-radius: 4px; }
+        .message-row.user .bubble { background: var(--accent-gradient); color: #fff; border-top-right-radius: 4px; }
+
+        .markdown p { margin-bottom: 12px; }
+        .markdown p:last-child { margin-bottom: 0; }
+        .markdown pre { background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-glass); border-radius: 8px; padding: 12px; margin: 12px 0; overflow-x: auto; position: relative; }
+        .markdown code { font-family: 'Fira Code', monospace; font-size: 0.85rem; color: #e2e8f0; }
+        .markdown :not(pre) > code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; color: #a855f7; }
+        
+        .typing-dots { display: flex; gap: 4px; padding: 8px 4px; }
+        .dot { width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%; animation: pulse 1.4s infinite; }
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        .input-wrapper { padding: 20px 24px 32px; background: transparent; }
+        
+        .input-box {
+            max-width: 800px; margin: 0 auto; background: var(--bg-glass); backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border-glass); border-radius: 24px; padding: 10px 16px;
+            display: flex; align-items: flex-end; gap: 12px; box-shadow: var(--shadow-float); transition: var(--transition);
+        }
+        .input-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+        .input-box.disabled { opacity: 0.5; pointer-events: none; }
+
+        .attach-btn {
+            width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.05); color: var(--text-muted); margin-bottom: 2px; flex-shrink: 0;
+        }
+        .attach-btn:hover { background: rgba(255,255,255,0.1); color: var(--text-main); }
+
+        textarea {
+            flex: 1; background: transparent; border: none; color: var(--text-main); font-size: 0.95rem;
+            line-height: 1.5; resize: none; max-height: 200px; min-height: 24px; padding: 8px 0; font-family: inherit;
+        }
+        textarea:focus { outline: none; }
+        textarea::placeholder { color: var(--text-muted); }
+
+        .send-btn {
+            width: 36px; height: 36px; border-radius: 50%; background: var(--accent-gradient); color: #fff;
+            display: flex; align-items: center; justify-content: center; margin-bottom: 2px; flex-shrink: 0;
+        }
+        .send-btn:disabled { opacity: 0.5; background: var(--bg-glass-hover); cursor: not-allowed; }
+
+        #toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast {
+            background: var(--bg-glass); backdrop-filter: var(--glass-blur); border: 1px solid var(--border-glass);
+            padding: 12px 20px; border-radius: var(--radius-md); font-size: 0.85rem; display: flex; align-items: center; gap: 10px;
+            box-shadow: var(--shadow-float); animation: slideInRight 0.3s forwards;
+        }
+        .toast.error { border-left: 4px solid var(--error); }
+        .toast.success { border-left: 4px solid var(--success); }
+        .toast.info { border-left: 4px solid var(--accent); }
+        .toast.fade-out { animation: fadeOutRight 0.3s forwards; }
+
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes fadeOutRight { to { opacity: 0; transform: translateX(100%); } }
+        @keyframes pulse { 0%, 100% { transform: scale(0.8); opacity: 0.5; } 50% { transform: scale(1.2); opacity: 1; } }
+
+        @media (max-width: 768px) { .sidebar { position: absolute; } .input-wrapper { padding: 16px; } }
+    </style>
+</head>
+<body>
+
+    <div id="toast-container"></div>
+
+    <aside class="sidebar" id="sidebar">
+        <button class="new-chat-btn" onclick="startNewChat()">
+            <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg> New Chat
+        </button>
+        
+        <div class="doc-status-card">
+            <h4><div class="status-dot" id="status-indicator"></div> Document Status</h4>
+            <p id="doc-name">No PDF uploaded yet.</p>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="navbar">
+            <div class="nav-left">
+                <button class="icon-btn" id="toggle-sidebar">
+                    <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+                </button>
+                <span>PDF Assistant</span>
+            </div>
+        </header>
+
+        <div class="chat-area" id="chat-area">
+            <div class="chat-container" id="chat-container">
+                <div class="message-row ai">
+                    <div class="avatar"><svg viewBox="0 0 24 24" style="width: 20px;"><path d="M21 11.5v-1c0-3.86-3.14-7-7-7h-4c-3.86 0-7 3.14-7 7v1c0 1.04.84 1.88 1.88 1.88H6v3.12C6 18.43 7.57 20 9.5 20h5c1.93 0 3.5-1.57 3.5-3.5v-3.12h1.12c1.04 0 1.88-.84 1.88-1.88zm-16 0v-1c0-2.76 2.24-5 5-5h4c2.76 0 5 2.24 5 5v1H5zm11 5c0 .83-.67 1.5-1.5 1.5h-5C8.67 18 8 17.33 8 16.5v-3h8v3z"/></svg></div>
+                    <div class="message-content">
+                        <div class="bubble markdown">
+                            <p>Hello! Main aapka PDF Assistant hoon. Pehle niche (📎) button par click karke apni PDF upload karein, fir koi bhi sawal puchein.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-wrapper">
+            <input type="file" id="file-upload" accept=".pdf" style="display: none;">
+            
+            <div class="input-box" id="main-input-box">
+                <button class="attach-btn" id="attach-btn" title="Upload PDF Document">
+                    <svg viewBox="0 0 24 24" style="width: 20px;"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
+                </button>
+                
+                <textarea id="chat-input" rows="1" placeholder="Upload a PDF first..." disabled></textarea>
+                
+                <button class="send-btn" id="send-btn" disabled>
+                    <svg viewBox="0 0 24 24" style="width: 18px; margin-left: 2px;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = "http://127.0.0.1:8000";
+        
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const chatContainer = document.getElementById('chat-container');
+        const chatArea = document.getElementById('chat-area');
+        const fileUpload = document.getElementById('file-upload');
+        const attachBtn = document.getElementById('attach-btn');
+        const inputBox = document.getElementById('main-input-box');
+        const docName = document.getElementById('doc-name');
+        const statusIndicator = document.getElementById('status-indicator');
+        
+        let isWaiting = false;
+        let isDocUploaded = false;
+
+        document.getElementById('toggle-sidebar').addEventListener('click', () => {
+            document.getElementById('sidebar').classList.toggle('hidden');
+        });
+
+        attachBtn.addEventListener('click', () => fileUpload.click());
+
+        fileUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (file.type !== "application/pdf") {
+                showToast("Please upload a valid PDF file.", "error");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            showToast('Uploading and analyzing PDF...', 'info');
+            docName.textContent = "Processing: " + file.name;
+            statusIndicator.classList.remove('ready');
+            inputBox.classList.add('disabled');
+
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || "Failed to process document");
+
+                isDocUploaded = true;
+                docName.textContent = file.name;
+                statusIndicator.classList.add('ready');
+                
+                inputBox.classList.remove('disabled');
+                chatInput.disabled = false;
+                chatInput.placeholder = "Puchiye apna sawal...";
+                chatInput.focus();
+                
+                showToast('Document ready! You can now chat.', 'success');
+                appendMessage(`Successfully processed **${file.name}**. Ab aap sawal puch sakte hain.`, 'ai');
+
+            } catch (error) {
+                showToast(error.message, 'error');
+                docName.textContent = "Upload Failed";
+                inputBox.classList.remove('disabled');
+            } finally {
+                fileUpload.value = ''; 
+            }
+        });
+
+        chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+            if (this.value.trim() === "") this.style.height = 'auto';
+            sendBtn.disabled = this.value.trim() === "" || isWaiting || !isDocUploaded;
+        });
+
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!sendBtn.disabled) handleSend();
+            }
+        });
+
+        sendBtn.addEventListener('click', () => handleSend());
+
+        async function handleSend() {
+            const text = chatInput.value.trim();
+            if (!text || isWaiting || !isDocUploaded) return;
+
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            sendBtn.disabled = true;
+
+            appendMessage(text, 'user');
+            
+            isWaiting = true;
+            inputBox.classList.add('disabled');
+            const loaderId = appendLoading();
+
+            try {
+                const response = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: text })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json().catch(()=>({}));
+                    throw new Error(err.detail || "Server Error");
+                }
+
+                const data = await response.json();
+                removeElement(loaderId);
+                appendMessage(data.answer, 'ai');
+
+            } catch (error) {
+                removeElement(loaderId);
+                showToast(error.message, 'error');
+                appendMessage(`**Error:** ${error.message}`, 'ai');
+            } finally {
+                isWaiting = false;
+                inputBox.classList.remove('disabled');
+                chatInput.focus();
+            }
+        }
+
+        function appendMessage(text, sender) {
+            const row = document.createElement('div');
+            row.className = `message-row ${sender}`;
+            const htmlContent = sender === 'ai' ? parseMarkdown(text) : escapeHtml(text).replace(/\n/g, '<br>');
+            const avatarSvg = sender === 'user' ? 'U' : '<svg viewBox="0 0 24 24"><path d="M21 11.5v-1c0-3.86-3.14-7-7-7h-4c-3.86 0-7 3.14-7 7v1c0 1.04.84 1.88 1.88 1.88H6v3.12C6 18.43 7.57 20 9.5 20h5c1.93 0 3.5-1.57 3.5-3.5v-3.12h1.12c1.04 0 1.88-.84 1.88-1.88zm-16 0v-1c0-2.76 2.24-5 5-5h4c2.76 0 5 2.24 5 5v1H5zm11 5c0 .83-.67 1.5-1.5 1.5h-5C8.67 18 8 17.33 8 16.5v-3h8v3z"/></svg>';
+
+            row.innerHTML = `
+                <div class="avatar">${avatarSvg}</div>
+                <div class="message-content">
+                    <div class="bubble ${sender === 'ai' ? 'markdown' : ''}">${htmlContent}</div>
+                </div>`;
+            chatContainer.appendChild(row);
+            scrollToBottom();
+        }
+
+        function appendLoading() {
+            const id = 'loader-' + Date.now();
+            const row = document.createElement('div');
+            row.className = `message-row ai`;
+            row.id = id;
+            row.innerHTML = `<div class="avatar"><svg viewBox="0 0 24 24"><path d="M21 11.5v-1c0-3.86-3.14-7-7-7h-4c-3.86 0-7 3.14-7 7v1c0 1.04.84 1.88 1.88 1.88H6v3.12C6 18.43 7.57 20 9.5 20h5c1.93 0 3.5-1.57 3.5-3.5v-3.12h1.12c1.04 0 1.88-.84 1.88-1.88zm-16 0v-1c0-2.76 2.24-5 5-5h4c2.76 0 5 2.24 5 5v1H5zm11 5c0 .83-.67 1.5-1.5 1.5h-5C8.67 18 8 17.33 8 16.5v-3h8v3z"/></svg></div>
+                             <div class="message-content"><div class="bubble"><div class="typing-dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></div>`;
+            chatContainer.appendChild(row);
+            scrollToBottom();
+            return id;
+        }
+
+        function scrollToBottom() { setTimeout(() => chatArea.scrollTop = chatArea.scrollHeight, 50); }
+        function removeElement(id) { const el = document.getElementById(id); if (el) el.remove(); }
+        window.startNewChat = () => { chatContainer.innerHTML = ''; };
+
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            const icon = type === 'success' ? '✔' : (type === 'error' ? '✖' : 'ℹ');
+            toast.innerHTML = `<strong>${icon}</strong> <span>${escapeHtml(msg)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.classList.add('fade-out'); toast.addEventListener('animationend', () => toast.remove()); }, 3000);
+        }
+
+        function escapeHtml(unsafe) { return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+        function parseMarkdown(text) {
+            let parsed = escapeHtml(text);
+            parsed = parsed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            parsed = parsed.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            parsed = parsed.replace(/`([^`]+)`/g, '<code>$1</code>');
+            parsed = parsed.replace(/(?:^|\n)-\s+(.*)/g, '<ul><li>$1</li></ul>').replace(/<\/ul>\s*<ul>/g, '');
+            return parsed.split('\n\n').map(line => `<p>${line.replace(/\n/g, '<br>')}</p>`).join('');
+        }
+    </script>
+</body>
+</html>
