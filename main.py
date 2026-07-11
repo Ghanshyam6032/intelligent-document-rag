@@ -28,9 +28,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str
     FAISS_INDEX_PATH: str = "./faiss_store"
     
-    # [RENDER FIX]: Removed the strict env_file requirement. 
-    # Render uses OS Environment Variables instead of a .env file.
-    # Pydantic will automatically pick up GROQ_API_KEY from Render's dashboard.
+    # Render OS environment variables directly read karega
     class Config:
         extra = "ignore"
 
@@ -75,7 +73,7 @@ class ChatResponse(BaseModel):
 # ==========================================
 class RAGEngine:
     def __init__(self):
-        logger.info("Initializing FAST Embedding Model... (This takes a few seconds)")
+        logger.info("Initializing FAST Embedding Model... (Lazy Loading Triggered)")
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2"
         )
@@ -146,29 +144,24 @@ class RAGEngine:
         response = self.llm.invoke(prompt)
         return response.content
 
-
 # ==========================================
-# LAZY LOADING LOGIC [RENDER FIX]
+# LAZY LOADING LOGIC (RENDER FIX)
 # ==========================================
-# We define a global variable but DO NOT initialize it yet.
-# This prevents HuggingFace models from downloading/loading during Uvicorn startup.
 _rag_engine_instance = None
 
 def get_rag_engine() -> RAGEngine:
     """Returns the RAG engine instance, initializing it on the first call."""
     global _rag_engine_instance
     if _rag_engine_instance is None:
-        logger.info("First request received. Initializing RAG Engine (Lazy Load)...")
         _rag_engine_instance = RAGEngine()
     return _rag_engine_instance
-
 
 # ==========================================
 # 5. FastAPI App & Endpoints
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # App starts instantly now. No heavy processing here.
+    # App starts instantly. No AI models are loaded here to prevent Render timeout.
     logger.info("FastAPI Application has started successfully. Port is ready!")
     yield
 
@@ -188,11 +181,7 @@ app.add_middleware(
 
 @app.get("/", response_model=HealthResponse)
 def health_check():
-    """
-    Health check endpoint. 
-    [RENDER FIX]: This no longer triggers heavy model loading. 
-    It just returns API status so Render's port checker gets an immediate response.
-    """
+    """Health check endpoint. Responds instantly to satisfy Render's port check."""
     global _rag_engine_instance
     is_db_loaded = (_rag_engine_instance is not None) and (_rag_engine_instance.vector_db is not None)
     return HealthResponse(
@@ -212,7 +201,7 @@ async def upload_pdf(file: UploadFile = File(...)):
             tmp.write(content)
             tmp_path = tmp.name
 
-        # [RENDER FIX]: Initialize engine here on the first request only
+        # Engine is initialized ONLY when a file is uploaded
         engine = get_rag_engine()
         engine.process_pdf(tmp_path)
         os.remove(tmp_path)
@@ -232,10 +221,12 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
     
     try:
-        # [RENDER FIX]: Ensure engine is loaded before generating answer
+        # Engine is loaded here if user chats without uploading (assuming DB exists on disk)
         engine = get_rag_engine()
         answer = engine.generate_answer(request.question)
         return ChatResponse(question=request.question, answer=answer)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to generate response.")
