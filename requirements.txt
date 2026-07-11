@@ -6,8 +6,8 @@ langchain-groq
 langchain-huggingface
 langchain-community
 faiss-cpu==1.7.4
+numpy<2.0.0
 pypdf
 sentence-transformers
-# Force PyTorch CPU version to save RAM and disk space
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
