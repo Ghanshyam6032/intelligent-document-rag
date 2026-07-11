@@ -5,6 +5,6 @@ pydantic-settings
 langchain-groq
 langchain-huggingface
 langchain-community
-faiss-cpu
+faiss-cpu==1.7.4
 pypdf
 sentence-transformers
