@@ -28,8 +28,9 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str
     FAISS_INDEX_PATH: str = "./faiss_store"
     
+    # Render par .env file nahi hoti, wahan Environment Variables hote hain.
+    # Pydantic automatic OS env vars utha lega.
     class Config:
-        env_file = "../.env" 
         extra = "ignore"
 
 try:
