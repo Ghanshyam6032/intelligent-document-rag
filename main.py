@@ -1,14 +1,20 @@
 import os
 # ==========================================
-# WINDOWS FAISS CRASH FIX (MUST BE AT THE TOP)
+# STRICT MEMORY & CPU THREAD LOCKS (RENDER 512MB FIX)
+# INKO SABSE UPAR RAKHNA ZAROORI HAI!
 # ==========================================
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 import sys
 import tempfile
 import logging
 import traceback
-import gc  # OPTIMIZATION: Garbage collection for memory management
+import gc  # Garbage collection
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -43,7 +49,7 @@ logging.basicConfig(
 logger = logging.getLogger("rag_chatbot")
 
 # ==========================================
-# 3. Pydantic Schemas (Request/Response Models)
+# 3. Pydantic Schemas
 # ==========================================
 class HealthResponse(BaseModel):
     status: str
@@ -65,7 +71,6 @@ class ChatResponse(BaseModel):
 # ==========================================
 # 4. Global Variables for Deferred Imports
 # ==========================================
-# Inko global rakhenge taaki sirf ek baar import hon
 ChatGroq = None
 HuggingFaceEmbeddings = None
 FAISS = None
@@ -73,13 +78,15 @@ PyPDFLoader = None
 RecursiveCharacterTextSplitter = None
 
 def load_heavy_libraries():
-    """
-    OPTIMIZATION: Yeh function FastAPI start hone ke baad hi chalega.
-    Isse Render ka 60-second port timeout error kabhi nahi aayega.
-    """
+    """Deferred importing to pass Render's port check and save initial RAM."""
     global ChatGroq, HuggingFaceEmbeddings, FAISS, PyPDFLoader, RecursiveCharacterTextSplitter
     if ChatGroq is None:
-        logger.info("Importing heavy AI libraries (Torch, LangChain, FAISS)... This may take a minute.")
+        logger.info("Importing heavy AI libraries on strict memory diet...")
+        
+        # PyTorch limits set before import
+        import torch
+        torch.set_num_threads(1)
+        
         from langchain_groq import ChatGroq as CG
         from langchain_huggingface import HuggingFaceEmbeddings as HFE
         from langchain_community.vectorstores import FAISS as F
@@ -94,15 +101,17 @@ def load_heavy_libraries():
         logger.info("Heavy libraries imported successfully!")
 
 # ==========================================
-# 5. RAG Engine (LangChain & Vector DB Logic)
+# 5. RAG Engine
 # ==========================================
 class RAGEngine:
     def __init__(self):
-        load_heavy_libraries() # Make sure libraries are loaded
+        load_heavy_libraries()
         
         logger.info("Initializing FAST Embedding Model...")
+        # Using a very memory-efficient config
         self.embedding = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2"
+            model_name="all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'} 
         )
         
         logger.info("Initializing Groq LLM...")
@@ -117,7 +126,7 @@ class RAGEngine:
         self.load_index()
 
     def load_index(self):
-        """Loads the persistent FAISS index from disk if it exists."""
+        """Loads FAISS index from disk."""
         if os.path.exists(self.index_path) and os.listdir(self.index_path):
             try:
                 self.vector_db = FAISS.load_local(
@@ -125,23 +134,22 @@ class RAGEngine:
                     self.embedding,
                     allow_dangerous_deserialization=True 
                 )
-                logger.info("FAISS index loaded successfully from disk.")
             except Exception as e:
-                logger.error(f"Failed to load FAISS index: {e}")
+                logger.error(f"Failed to load FAISS: {e}")
                 self.vector_db = None
 
     def process_pdf(self, file_path: str):
-        """Splits the PDF and creates a FAISS index efficiently."""
-        logger.info("Loading PDF lazily to conserve RAM...")
+        """Ultra-low memory PDF processor."""
+        logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+        # REDUCED CHUNK SIZE for lower memory spikes
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
         
-        # Reset DB for the new upload to overwrite old data
         self.vector_db = None 
         
-        # Process in batches of chunks to prevent OOM
-        batch_size = 100 
+        # MICRO-BATCHING: Only process 20 chunks at a time
+        batch_size = 20 
         current_batch = []
         batch_counter = 1
 
@@ -150,21 +158,24 @@ class RAGEngine:
                 page_chunks = splitter.split_documents([page])
                 current_batch.extend(page_chunks)
 
-                if len(current_batch) >= batch_size:
-                    self._process_and_index_batch(current_batch, batch_counter)
-                    current_batch = [] 
+                while len(current_batch) >= batch_size:
+                    # Slice the batch exactly to batch_size
+                    process_batch = current_batch[:batch_size]
+                    self._process_and_index_batch(process_batch, batch_counter)
+                    
+                    # Keep the remainder
+                    current_batch = current_batch[batch_size:]
                     batch_counter += 1
 
+            # Process leftover chunks
             if current_batch:
                 self._process_and_index_batch(current_batch, batch_counter)
 
             if self.vector_db is None:
-                raise ValueError("The PDF appears to be empty or unreadable.")
+                raise ValueError("The PDF appears to be empty.")
 
-            logger.info("Saving persistent FAISS index to disk...")
             self.vector_db.save_local(self.index_path)
-            logger.info("PDF processing completed successfully.")
-
+            
         except Exception as e:
             logger.error(f"Error during PDF processing: {str(e)}")
             raise e
@@ -172,8 +183,8 @@ class RAGEngine:
             gc.collect()
 
     def _process_and_index_batch(self, batch: list, batch_number: int):
-        """Helper method to embed a batch and incrementally add to FAISS."""
-        logger.info(f"Embedding and indexing batch {batch_number} ({len(batch)} chunks)...")
+        """Embeds micro-batches and forces memory clear."""
+        logger.info(f"Indexing batch {batch_number} ({len(batch)} chunks)...")
         
         if self.vector_db is None:
             self.vector_db = FAISS.from_documents(batch, self.embedding)
@@ -184,15 +195,14 @@ class RAGEngine:
         gc.collect()
 
     def generate_answer(self, question: str) -> str:
-        """Retrieves context and generates an answer."""
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        docs = self.vector_db.similarity_search(question, k=5)
+        docs = self.vector_db.similarity_search(question, k=4) # Reduced from 5 to 4 to save memory
         context = "\n\n".join(doc.page_content for doc in docs)
 
         prompt = f"""
-        You are a highly accurate AI assistant analyzing a medical or technical document.
+        You are a highly accurate AI assistant analyzing a technical document.
         Read the context below and answer the user's question based ONLY on this exact context.
         Do NOT use outside knowledge. Do NOT guess.
         If the context does not contain the exact answer, reply strictly with: "I couldn't find that information in the uploaded document."
@@ -242,12 +252,11 @@ app.add_middleware(
 
 @app.get("/", response_model=HealthResponse)
 def health_check():
-    """Health check endpoint. Responds instantly."""
     global _rag_engine_instance
     is_db_loaded = (_rag_engine_instance is not None) and (_rag_engine_instance.vector_db is not None)
     return HealthResponse(
         status="ok",
-        message="API is running smoothly.",
+        message="API is running.",
         vector_db_loaded=is_db_loaded
     )
 
@@ -268,7 +277,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         return UploadResponse(
             status="success",
-            message="Document successfully processed.",
+            message="Document processed.",
             filename=file.filename
         )
     except Exception as e:
