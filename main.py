@@ -8,6 +8,7 @@ import sys
 import tempfile
 import logging
 import traceback
+import gc  # OPTIMIZATION: Garbage collection for memory management
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -104,21 +105,67 @@ class RAGEngine:
                 self.vector_db = None
 
     def process_pdf(self, file_path: str):
-        """Splits the PDF and creates a fresh FAISS index."""
-        logger.info("Loading and parsing PDF...")
+        """
+        Splits the PDF and creates a FAISS index efficiently.
+        Optimized for Render: Uses lazy loading, batch embedding, and garbage collection.
+        """
+        logger.info("Loading PDF lazily to conserve RAM...")
         loader = PyPDFLoader(file_path)
-        documents = loader.load()
-
-        if not documents:
-            raise ValueError("The PDF appears to be empty or unreadable.")
-
-        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-        chunks = splitter.split_documents(documents)
-
-        logger.info("Updating Vector Database... (Overwriting old data)")
-        self.vector_db = FAISS.from_documents(chunks, self.embedding)
         
-        self.vector_db.save_local(self.index_path)
+        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+        
+        # OPTIMIZATION: Reset DB for the new upload to overwrite old data
+        self.vector_db = None 
+        
+        # OPTIMIZATION: Process in batches of chunks to prevent OOM (Out of Memory) crashes
+        batch_size = 100 
+        current_batch = []
+        batch_counter = 1
+
+        try:
+            # OPTIMIZATION: loader.lazy_load() yields pages one by one instead of loading 400 pages into RAM
+            for page in loader.lazy_load():
+                page_chunks = splitter.split_documents([page])
+                current_batch.extend(page_chunks)
+
+                # When batch reaches the limit, embed and index it
+                if len(current_batch) >= batch_size:
+                    self._process_and_index_batch(current_batch, batch_counter)
+                    current_batch = []  # Clear the list
+                    batch_counter += 1
+
+            # Process any remaining chunks that didn't fill the last batch
+            if current_batch:
+                self._process_and_index_batch(current_batch, batch_counter)
+
+            if self.vector_db is None:
+                raise ValueError("The PDF appears to be empty or unreadable.")
+
+            logger.info("Saving persistent FAISS index to disk...")
+            self.vector_db.save_local(self.index_path)
+            logger.info("PDF processing completed successfully.")
+
+        except Exception as e:
+            logger.error(f"Error during PDF processing: {str(e)}")
+            raise e
+        finally:
+            # OPTIMIZATION: Final memory cleanup after full document processing
+            gc.collect()
+
+    def _process_and_index_batch(self, batch: list, batch_number: int):
+        """Helper method to embed a batch and incrementally add to FAISS, then clear memory."""
+        logger.info(f"Embedding and indexing batch {batch_number} ({len(batch)} chunks)...")
+        
+        if self.vector_db is None:
+            # OPTIMIZATION: Initialize the FAISS index ONLY on the first batch
+            self.vector_db = FAISS.from_documents(batch, self.embedding)
+        else:
+            # OPTIMIZATION: Incrementally add to existing index for subsequent batches
+            self.vector_db.add_documents(batch)
+            
+        # OPTIMIZATION: Aggressive garbage collection to free RAM on Render immediately
+        del batch
+        gc.collect()
 
     def generate_answer(self, question: str) -> str:
         """Retrieves context and generates an answer."""
