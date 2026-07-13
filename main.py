@@ -16,12 +16,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
-from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 # ==========================================
 # 1. Configuration & Settings
 # ==========================================
@@ -29,7 +23,6 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str
     FAISS_INDEX_PATH: str = "./faiss_store"
     
-    # Render OS environment variables directly read karega
     class Config:
         extra = "ignore"
 
@@ -70,11 +63,44 @@ class ChatResponse(BaseModel):
     answer: str
 
 # ==========================================
-# 4. RAG Engine (LangChain & Vector DB Logic)
+# 4. Global Variables for Deferred Imports
+# ==========================================
+# Inko global rakhenge taaki sirf ek baar import hon
+ChatGroq = None
+HuggingFaceEmbeddings = None
+FAISS = None
+PyPDFLoader = None
+RecursiveCharacterTextSplitter = None
+
+def load_heavy_libraries():
+    """
+    OPTIMIZATION: Yeh function FastAPI start hone ke baad hi chalega.
+    Isse Render ka 60-second port timeout error kabhi nahi aayega.
+    """
+    global ChatGroq, HuggingFaceEmbeddings, FAISS, PyPDFLoader, RecursiveCharacterTextSplitter
+    if ChatGroq is None:
+        logger.info("Importing heavy AI libraries (Torch, LangChain, FAISS)... This may take a minute.")
+        from langchain_groq import ChatGroq as CG
+        from langchain_huggingface import HuggingFaceEmbeddings as HFE
+        from langchain_community.vectorstores import FAISS as F
+        from langchain_community.document_loaders import PyPDFLoader as PPL
+        from langchain_text_splitters import RecursiveCharacterTextSplitter as RCTS
+        
+        ChatGroq = CG
+        HuggingFaceEmbeddings = HFE
+        FAISS = F
+        PyPDFLoader = PPL
+        RecursiveCharacterTextSplitter = RCTS
+        logger.info("Heavy libraries imported successfully!")
+
+# ==========================================
+# 5. RAG Engine (LangChain & Vector DB Logic)
 # ==========================================
 class RAGEngine:
     def __init__(self):
-        logger.info("Initializing FAST Embedding Model... (Lazy Loading Triggered)")
+        load_heavy_libraries() # Make sure libraries are loaded
+        
+        logger.info("Initializing FAST Embedding Model...")
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2"
         )
@@ -105,36 +131,30 @@ class RAGEngine:
                 self.vector_db = None
 
     def process_pdf(self, file_path: str):
-        """
-        Splits the PDF and creates a FAISS index efficiently.
-        Optimized for Render: Uses lazy loading, batch embedding, and garbage collection.
-        """
+        """Splits the PDF and creates a FAISS index efficiently."""
         logger.info("Loading PDF lazily to conserve RAM...")
         loader = PyPDFLoader(file_path)
         
         splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
         
-        # OPTIMIZATION: Reset DB for the new upload to overwrite old data
+        # Reset DB for the new upload to overwrite old data
         self.vector_db = None 
         
-        # OPTIMIZATION: Process in batches of chunks to prevent OOM (Out of Memory) crashes
+        # Process in batches of chunks to prevent OOM
         batch_size = 100 
         current_batch = []
         batch_counter = 1
 
         try:
-            # OPTIMIZATION: loader.lazy_load() yields pages one by one instead of loading 400 pages into RAM
             for page in loader.lazy_load():
                 page_chunks = splitter.split_documents([page])
                 current_batch.extend(page_chunks)
 
-                # When batch reaches the limit, embed and index it
                 if len(current_batch) >= batch_size:
                     self._process_and_index_batch(current_batch, batch_counter)
-                    current_batch = []  # Clear the list
+                    current_batch = [] 
                     batch_counter += 1
 
-            # Process any remaining chunks that didn't fill the last batch
             if current_batch:
                 self._process_and_index_batch(current_batch, batch_counter)
 
@@ -149,21 +169,17 @@ class RAGEngine:
             logger.error(f"Error during PDF processing: {str(e)}")
             raise e
         finally:
-            # OPTIMIZATION: Final memory cleanup after full document processing
             gc.collect()
 
     def _process_and_index_batch(self, batch: list, batch_number: int):
-        """Helper method to embed a batch and incrementally add to FAISS, then clear memory."""
+        """Helper method to embed a batch and incrementally add to FAISS."""
         logger.info(f"Embedding and indexing batch {batch_number} ({len(batch)} chunks)...")
         
         if self.vector_db is None:
-            # OPTIMIZATION: Initialize the FAISS index ONLY on the first batch
             self.vector_db = FAISS.from_documents(batch, self.embedding)
         else:
-            # OPTIMIZATION: Incrementally add to existing index for subsequent batches
             self.vector_db.add_documents(batch)
             
-        # OPTIMIZATION: Aggressive garbage collection to free RAM on Render immediately
         del batch
         gc.collect()
 
@@ -192,24 +208,22 @@ class RAGEngine:
         return response.content
 
 # ==========================================
-# LAZY LOADING LOGIC (RENDER FIX)
+# LAZY LOADING LOGIC
 # ==========================================
 _rag_engine_instance = None
 
 def get_rag_engine() -> RAGEngine:
-    """Returns the RAG engine instance, initializing it on the first call."""
     global _rag_engine_instance
     if _rag_engine_instance is None:
         _rag_engine_instance = RAGEngine()
     return _rag_engine_instance
 
 # ==========================================
-# 5. FastAPI App & Endpoints
+# 6. FastAPI App & Endpoints
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # App starts instantly. No AI models are loaded here to prevent Render timeout.
-    logger.info("FastAPI Application has started successfully. Port is ready!")
+    logger.info("FastAPI Application has started instantly! Port is bound.")
     yield
 
 app = FastAPI(
@@ -228,7 +242,7 @@ app.add_middleware(
 
 @app.get("/", response_model=HealthResponse)
 def health_check():
-    """Health check endpoint. Responds instantly to satisfy Render's port check."""
+    """Health check endpoint. Responds instantly."""
     global _rag_engine_instance
     is_db_loaded = (_rag_engine_instance is not None) and (_rag_engine_instance.vector_db is not None)
     return HealthResponse(
@@ -248,7 +262,6 @@ async def upload_pdf(file: UploadFile = File(...)):
             tmp.write(content)
             tmp_path = tmp.name
 
-        # Engine is initialized ONLY when a file is uploaded
         engine = get_rag_engine()
         engine.process_pdf(tmp_path)
         os.remove(tmp_path)
@@ -268,7 +281,6 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
     
     try:
-        # Engine is loaded here if user chats without uploading (assuming DB exists on disk)
         engine = get_rag_engine()
         answer = engine.generate_answer(request.question)
         return ChatResponse(question=request.question, answer=answer)
