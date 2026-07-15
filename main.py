@@ -1,7 +1,7 @@
 import os
 # ==========================================
-# STRICT MEMORY & CPU THREAD LOCKS (512MB RAM FIX)
-# INKO SABSE UPAR RAKHNA ZAROORI HAI!
+# STRICT MEMORY & CPU THREAD LOCKS (512MB-1GB RAM FIX)
+# REQUIRED FOR STABLE RAILWAY/RENDER DEPLOYMENT
 # ==========================================
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -78,11 +78,12 @@ PyPDFLoader = None
 RecursiveCharacterTextSplitter = None
 
 def load_heavy_libraries():
-    """Deferred importing to pass Render/Railway port check and save initial RAM."""
+    """Deferred importing to pass Railway port timeout checks and save initial RAM."""
     global ChatGroq, HuggingFaceEmbeddings, FAISS, PyPDFLoader, RecursiveCharacterTextSplitter
     if ChatGroq is None:
         logger.info("Importing heavy AI libraries on strict memory diet...")
         
+        # PyTorch limits set before import to prevent memory spikes
         import torch
         torch.set_num_threads(1)
         
@@ -107,6 +108,7 @@ class RAGEngine:
         load_heavy_libraries()
         
         logger.info("Initializing FAST Embedding Model...")
+        # all-MiniLM is the best balance of speed, low memory, and semantic accuracy
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'} 
@@ -116,7 +118,7 @@ class RAGEngine:
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             api_key=settings.GROQ_API_KEY,
-            temperature=0.0 # Changed to 0.0 for maximum factual strictness
+            temperature=0.0 # Absolute zero for maximum factual fidelity and zero hallucination
         )
         
         self.vector_db = None
@@ -137,15 +139,21 @@ class RAGEngine:
                 self.vector_db = None
 
     def process_pdf(self, file_path: str):
-        """Ultra-low memory PDF processor."""
+        """Ultra-low memory PDF processor optimized for Technical Documents."""
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # Kept at 800/150: Optimal for retaining technical context and formulas across page breaks
-        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+        # CHUNK OPTIMIZATION: 800 size keeps context focused. 200 overlap is crucial 
+        # for technical PDFs so algorithms and math formulas aren't cut in half.
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=800, 
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ".", " ", ""]
+        )
         
         self.vector_db = None 
         
+        # MICRO-BATCHING: Process exactly 20 chunks at a time to prevent RAM overflow
         batch_size = 20 
         current_batch = []
         batch_counter = 1
@@ -161,6 +169,7 @@ class RAGEngine:
                     current_batch = current_batch[batch_size:]
                     batch_counter += 1
 
+            # Process any remaining chunks
             if current_batch:
                 self._process_and_index_batch(current_batch, batch_counter)
 
@@ -176,6 +185,7 @@ class RAGEngine:
             gc.collect()
 
     def _process_and_index_batch(self, batch: list, batch_number: int):
+        """Embeds micro-batches and forces memory clear."""
         logger.info(f"Indexing batch {batch_number} ({len(batch)} chunks)...")
         
         if self.vector_db is None:
@@ -190,29 +200,36 @@ class RAGEngine:
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        # MMR fetches 30 chunks, picks the most diverse 6. Prevents repeating the same paragraph.
+        # RETRIEVAL UPGRADE: High-Relevance MMR
+        # lambda_mult=0.85 strongly prefers relevance over diversity to prevent cross-topic contamination
+        # (e.g., stops the model from pulling in Regression when asked about Classification).
+        # fetch_k=30 ensures a deep pool, k=6 ensures enough context to merge split concepts.
         docs = self.vector_db.max_marginal_relevance_search(
             question, 
             k=6, 
             fetch_k=30, 
-            lambda_mult=0.7 
+            lambda_mult=0.85 
         )
         context = "\n\n---\n\n".join(doc.page_content for doc in docs)
 
-        # STRICT PROMPT: Enforcing no-AI-speak and exact formatting requirements
+        # PROMPT UPGRADE: Master System Prompt for ChatGPT-like accuracy & formatting
         prompt = f"""
-        You are a subject matter expert and an authoritative teacher. Answer the user's question directly using ONLY the provided Source Material.
-        
+        You are a highly capable, professional AI assistant. Answer the user's question directly, confidently, and naturally, using ONLY the provided Source Material.
+
         CRITICAL RULES:
-        1. NO AI-SPEAK: NEVER use phrases like "Based on the provided context", "According to the document", "The text states", "Here is the answer", or "I will attempt to answer". Start answering immediately with the facts.
-        2. TONE: Write as if you are a textbook directly stating facts. Do not summarize; answer the question directly. Do not repeat the question.
-        3. NO OUTSIDE KNOWLEDGE: If the answer cannot be logically deduced from the Source Material, you MUST output exactly this exact phrase and nothing else: "I couldn't find that information in the uploaded document." Do not add apologies or disclaimers.
-        4. SYNTHESIS: Seamlessly combine information from multiple snippets if required to form a complete answer. 
-        5. FORMATTING: Use clean Markdown. Match the user's intent:
-           - If they ask to "List", provide a bulleted list.
-           - If they ask to "Explain", provide a coherent paragraph explanation.
-           - If they ask for an "Algorithm" or "Steps", provide a numbered step-by-step guide.
-        6. MATH & DATA: Preserve mathematical formulas exactly as they appear in the source. Keep the answer concise unless the user explicitly asked for a detailed explanation.
+        1. NO AI-SPEAK: NEVER use phrases like "Based on the provided context", "According to the document", "The text states", or "I will attempt to answer". Start answering immediately.
+        2. NO HALLUCINATION: Rely entirely on the Source Material. Do not use outside knowledge.
+        3. STRICT ABSENCE FALLBACK: ONLY if the answer cannot be logically deduced from the Source Material, reply EXACTLY with: "I couldn't find that information in the uploaded document." Do not add apologies or extra text.
+        4. TOPIC ISOLATION: Be incredibly precise. If asked about a specific concept (e.g., k-NN), do not include details about unrelated concepts (e.g., Regression) just because they are in the context.
+        5. SYNTHESIS: If the answer spans multiple snippets, combine them seamlessly into one coherent response.
+        6. FIDELITY: Preserve mathematical formulas, variables, and technical terminology exactly as written.
+
+        FORMATTING DIRECTIVES (Match the User's Intent):
+        - If asked "What is..." -> Provide a clear, exact definition followed by brief context.
+        - If asked to "Explain" -> Provide a comprehensive, natural paragraph explanation.
+        - If asked to "List" or "Advantages/Disadvantages" -> Provide concise bullet points.
+        - If asked for an "Algorithm" or "Steps" -> Provide a numbered, step-by-step list.
+        - If asked for a "Difference", "Compare", or "Vs" -> Create a clean Markdown comparison table.
 
         Source Material:
         {context}
