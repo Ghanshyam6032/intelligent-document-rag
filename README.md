@@ -28,7 +28,7 @@ PDF Upload → LangChain Text Splitting → HuggingFace Embeddings → FAISS Vec
 
 ## 🌐 Live Demo
 
- **Frontend:** https://pdf-rag-chatbot-frontend.onrender.com
+ **Frontend:** https://ghanshyam6032.github.io/intelligent-document-rag/
 
 ## 📊 Languages Used
 
