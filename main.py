@@ -108,17 +108,17 @@ class RAGEngine:
         load_heavy_libraries()
         
         logger.info("Initializing FAST Embedding Model...")
+        # Using a very memory-efficient config
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'},
-            encode_kwargs={'normalize_embeddings': True}  # ADDED: For stable cosine similarity
+            model_kwargs={'device': 'cpu'} 
         )
         
         logger.info("Initializing Groq LLM...")
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             api_key=settings.GROQ_API_KEY,
-            temperature=0.0  # ADJUSTED: 0.0 for strict, deterministic Q&A
+            temperature=0.1
         )
         
         self.vector_db = None
@@ -143,10 +143,14 @@ class RAGEngine:
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # ADJUSTED: Increased chunk size for better context retention
+        # IMPROVEMENT: Increased chunk_size to 800 and overlap to 150.
+        # 500 was too small and often broke sentences/context apart, 
+        # causing the LLM to miss the broader meaning.
         splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
         
         self.vector_db = None 
+        
+        # MICRO-BATCHING: Only process 20 chunks at a time (kept exactly the same to preserve memory)
         batch_size = 20 
         current_batch = []
         batch_counter = 1
@@ -157,11 +161,15 @@ class RAGEngine:
                 current_batch.extend(page_chunks)
 
                 while len(current_batch) >= batch_size:
+                    # Slice the batch exactly to batch_size
                     process_batch = current_batch[:batch_size]
                     self._process_and_index_batch(process_batch, batch_counter)
+                    
+                    # Keep the remainder
                     current_batch = current_batch[batch_size:]
                     batch_counter += 1
 
+            # Process leftover chunks
             if current_batch:
                 self._process_and_index_batch(current_batch, batch_counter)
 
@@ -192,22 +200,23 @@ class RAGEngine:
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        # ADJUSTED: Tuned MMR retrieval for dense technical documents
+        # IMPROVEMENT: Switched to Max Marginal Relevance (MMR) search.
+        # This fetches 20 documents initially and filters them down to the 5 most relevant 
+        # AND diverse chunks. This prevents retrieving 4 identical chunks and missing the answer.
         try:
-            docs = self.vector_db.max_marginal_relevance_search(
-                question, 
-                k=8, 
-                fetch_k=20, 
-                lambda_mult=0.85
-            )
+            docs = self.vector_db.max_marginal_relevance_search(question, k=5, fetch_k=20)
         except Exception as e:
             logger.warning(f"MMR search failed, falling back to similarity search: {e}")
-            docs = self.vector_db.similarity_search(question, k=8)
+            docs = self.vector_db.similarity_search(question, k=5)
             
+        # IMPROVEMENT: Added clear separators between chunks for the LLM to read better.
         context = "\n\n---\n\n".join(doc.page_content for doc in docs)
+        
         logger.info(f"Retrieved {len(docs)} diverse chunks for the query.")
 
-        # ADJUSTED: Prompt refactored to allow synthesis and avoid exact-match false failures
+        # IMPROVEMENT: Completely refactored the prompt. 
+        # Removed the word "exact" as Llama models take it literally and refuse to synthesize answers.
+        # Added clear XML-style tags for separation.
         prompt = f"""
         You are a highly accurate and intelligent AI assistant analyzing a technical document.
         Carefully read the context provided below and answer the user's question.
@@ -279,7 +288,6 @@ async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDFs are accepted.")
     
-    tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             content = await file.read()
@@ -288,6 +296,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         engine = get_rag_engine()
         engine.process_pdf(tmp_path)
+        os.remove(tmp_path)
 
         return UploadResponse(
             status="success",
@@ -297,14 +306,6 @@ async def upload_pdf(file: UploadFile = File(...)):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error.")
-    finally:
-        # ADJUSTED: Safe cleanup of temporary files even if an exception occurs
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-                logger.info("Temporary file successfully removed in finally block.")
-            except Exception as cleanup_error:
-                logger.error(f"Failed to delete temp file: {cleanup_error}")
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
