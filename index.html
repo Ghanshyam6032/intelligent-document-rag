@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Assistant</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
     
@@ -28,6 +28,14 @@
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        
+        /* --- MOBILE ZOOM FIX (ONLY FOR PHONES) --- */
+        @media (max-width: 768px) {
+            input, textarea, button, select {
+                font-size: 16px !important;
+                touch-action: manipulation;
+            }
+        }
         
         body {
             font-family: 'Outfit', sans-serif;
@@ -190,7 +198,6 @@
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
     <aside class="sidebar" id="sidebar">
-        <!-- Changed Name Here -->
         <div class="brand">PDF Assistant</div>
         
         <div class="sidebar-content">
@@ -242,7 +249,7 @@
     </main>
 
     <script>
-        const API_BASE = "https://pdf-rag-chatbot-backend.onrender.com";
+        const API_BASE = "https://intelligent-document-rag-production.up.railway.app";
         
         const chatInput = document.getElementById('chat-input');
         const sendBtn = document.getElementById('send-btn');
