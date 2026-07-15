@@ -1,6 +1,6 @@
 import os
 # ==========================================
-# STRICT MEMORY & CPU THREAD LOCKS (RENDER 512MB FIX)
+# STRICT MEMORY & CPU THREAD LOCKS (512MB RAM FIX)
 # INKO SABSE UPAR RAKHNA ZAROORI HAI!
 # ==========================================
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
@@ -78,7 +78,7 @@ PyPDFLoader = None
 RecursiveCharacterTextSplitter = None
 
 def load_heavy_libraries():
-    """Deferred importing to pass Render's port check and save initial RAM."""
+    """Deferred importing to pass Render/Railway port check and save initial RAM."""
     global ChatGroq, HuggingFaceEmbeddings, FAISS, PyPDFLoader, RecursiveCharacterTextSplitter
     if ChatGroq is None:
         logger.info("Importing heavy AI libraries on strict memory diet...")
@@ -108,7 +108,7 @@ class RAGEngine:
         load_heavy_libraries()
         
         logger.info("Initializing FAST Embedding Model...")
-        # Using a very memory-efficient config
+        # Using a very memory-efficient config (all-MiniLM is excellent for low RAM)
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'} 
@@ -118,7 +118,7 @@ class RAGEngine:
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             api_key=settings.GROQ_API_KEY,
-            temperature=0.1
+            temperature=0.1 # Low temp for factual responses
         )
         
         self.vector_db = None
@@ -143,12 +143,13 @@ class RAGEngine:
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # REDUCED CHUNK SIZE for lower memory spikes
-        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+        # INCREASED CHUNK SIZE & OVERLAP: Technical PDFs need larger context blocks.
+        # 800/150 gives enough meat per chunk without causing massive memory spikes.
+        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
         
         self.vector_db = None 
         
-        # MICRO-BATCHING: Only process 20 chunks at a time
+        # MICRO-BATCHING: Process 20 chunks at a time to prevent RAM overflow
         batch_size = 20 
         current_batch = []
         batch_counter = 1
@@ -198,14 +199,28 @@ class RAGEngine:
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        docs = self.vector_db.similarity_search(question, k=4) # Reduced from 5 to 4 to save memory
-        context = "\n\n".join(doc.page_content for doc in docs)
+        # UPGRADE: Replaced similarity_search with MMR (Maximal Marginal Relevance)
+        # fetch_k=30 pulls a broad net of relevant chunks, k=6 picks the most diverse and relevant 6.
+        # lambda_mult=0.7 favors relevance while ensuring enough diversity to catch fragmented answers.
+        docs = self.vector_db.max_marginal_relevance_search(
+            question, 
+            k=6, 
+            fetch_k=30, 
+            lambda_mult=0.7 
+        )
+        context = "\n\n---\n\n".join(doc.page_content for doc in docs)
 
+        # UPGRADE: Improved system prompt for natural synthesis and lower false-negative fallback rates
         prompt = f"""
-        You are a highly accurate AI assistant analyzing a technical document.
-        Read the context below and answer the user's question based ONLY on this exact context.
-        Do NOT use outside knowledge. Do NOT guess.
-        If the context does not contain the exact answer, reply strictly with: "I couldn't find that information in the uploaded document."
+        You are an expert technical AI assistant analyzing a provided document. 
+        Read the extracted context below carefully. It contains relevant, possibly fragmented snippets from the uploaded document.
+        
+        Instructions:
+        1. Answer the user's question comprehensively based ONLY on the provided context.
+        2. The necessary information might be spread across multiple chunks. Synthesize these pieces to form a complete, coherent, and natural answer.
+        3. Do NOT rely on outside knowledge or hallucinate facts.
+        4. If the context contains partial information, provide what is available and clearly state the limitations based on the text.
+        5. ONLY if the context is entirely irrelevant and completely lacks any information to answer the question, reply strictly with: "I couldn't find that information in the uploaded document."
         
         Context:
         {context}
