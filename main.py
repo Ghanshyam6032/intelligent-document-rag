@@ -1,4 +1,5 @@
 import os
+import re
 # ==========================================
 # STRICT MEMORY & CPU THREAD LOCKS (512MB-1GB RAM FIX)
 # REQUIRED FOR STABLE RAILWAY/RENDER DEPLOYMENT
@@ -14,7 +15,8 @@ import sys
 import tempfile
 import logging
 import traceback
-import gc  # Garbage collection
+import gc  
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -28,6 +30,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     GROQ_API_KEY: str
     FAISS_INDEX_PATH: str = "./faiss_store"
+    DOCSTORE_PATH: str = "./doc_store" # Persists parent documents to disk, saving RAM
     
     class Config:
         extra = "ignore"
@@ -76,10 +79,14 @@ HuggingFaceEmbeddings = None
 FAISS = None
 PyPDFLoader = None
 RecursiveCharacterTextSplitter = None
+ParentDocumentRetriever = None
+LocalFileStore = None
+Document = None
 
 def load_heavy_libraries():
     """Deferred importing to pass Railway port timeout checks and save initial RAM."""
     global ChatGroq, HuggingFaceEmbeddings, FAISS, PyPDFLoader, RecursiveCharacterTextSplitter
+    global ParentDocumentRetriever, LocalFileStore, Document
     if ChatGroq is None:
         logger.info("Importing heavy AI libraries on strict memory diet...")
         
@@ -92,12 +99,18 @@ def load_heavy_libraries():
         from langchain_community.vectorstores import FAISS as F
         from langchain_community.document_loaders import PyPDFLoader as PPL
         from langchain_text_splitters import RecursiveCharacterTextSplitter as RCTS
+        from langchain.retrievers import ParentDocumentRetriever as PDR
+        from langchain.storage import LocalFileStore as LFS
+        from langchain.schema import Document as Doc
         
         ChatGroq = CG
         HuggingFaceEmbeddings = HFE
         FAISS = F
         PyPDFLoader = PPL
         RecursiveCharacterTextSplitter = RCTS
+        ParentDocumentRetriever = PDR
+        LocalFileStore = LFS
+        Document = Doc
         logger.info("Heavy libraries imported successfully!")
 
 # ==========================================
@@ -107,26 +120,65 @@ class RAGEngine:
     def __init__(self):
         load_heavy_libraries()
         
-        logger.info("Initializing FAST Embedding Model...")
-        # all-MiniLM remains the best choice for high-quality retrieval under strict RAM limits.
+        logger.info("Initializing BGE-Small Embedding Model...")
+        # UPGRADE: BAAI/bge-small-en-v1.5. Requires normalize_embeddings=True for optimal accuracy.
+        # It perfectly balances extreme lightweight RAM usage with top-tier semantic retrieval.
         self.embedding = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'} 
+            model_name="BAAI/bge-small-en-v1.5",
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True} 
         )
         
         logger.info("Initializing Groq LLM...")
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             api_key=settings.GROQ_API_KEY,
-            temperature=0.0 # Strict zero temperature for maximum fidelity and zero hallucination
+            temperature=0.0 # Absolute zero for ChatGPT-like confident, strictly factual responses
         )
         
         self.vector_db = None
+        self.retriever = None
         self.index_path = settings.FAISS_INDEX_PATH
+        self.docstore_path = settings.DOCSTORE_PATH
+        
+        # Smart Text Splitters for ParentDocumentRetriever
+        # Parents: Large context (1500 chars) ensuring complete tables, algorithms, and sections.
+        self.parent_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1500, chunk_overlap=200,
+            separators=["\n\n", "\n", "(?<=\\. )", " "], is_separator_regex=True
+        )
+        # Children: Tiny context (400 chars) for laser-focused semantic matching.
+        self.child_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=400, chunk_overlap=50,
+            separators=["\n\n", "\n", "(?<=\\. )", " "], is_separator_regex=True
+        )
+        
         self.load_index()
 
+    def _init_retriever(self, force_new=False):
+        """Initializes the ParentDocumentRetriever and underlying FAISS/FileStore."""
+        os.makedirs(self.docstore_path, exist_ok=True)
+        store = LocalFileStore(self.docstore_path)
+        
+        if self.vector_db is None or force_new:
+            # Initialize empty FAISS dynamically by feeding a dummy doc and deleting it.
+            # This avoids hardcoding vector dimensions and prevents crash errors.
+            dummy = Document(page_content="init")
+            self.vector_db = FAISS.from_documents([dummy], self.embedding)
+            self.vector_db.delete([list(self.vector_db.docstore._dict.keys())[0]])
+
+        # Configure PDR with MMR retrieval logic
+        self.retriever = ParentDocumentRetriever(
+            vectorstore=self.vector_db,
+            docstore=store,
+            child_splitter=self.child_splitter,
+            parent_splitter=self.parent_splitter,
+            search_type="mmr",
+            search_kwargs={"k": 5, "fetch_k": 30, "lambda_mult": 0.85} # High precision MMR
+        )
+
     def load_index(self):
-        """Loads FAISS index from disk."""
+        """Loads persistent FAISS and Document Store from disk after server restart."""
         if os.path.exists(self.index_path) and os.listdir(self.index_path):
             try:
                 self.vector_db = FAISS.load_local(
@@ -134,55 +186,42 @@ class RAGEngine:
                     self.embedding,
                     allow_dangerous_deserialization=True 
                 )
+                self._init_retriever(force_new=False)
             except Exception as e:
                 logger.error(f"Failed to load FAISS: {e}")
                 self.vector_db = None
+                self.retriever = None
 
     def process_pdf(self, file_path: str):
-        """Ultra-low memory PDF processor with Semantic Chunking & Indexing."""
-        logger.info("Starting ultra-low memory PDF parsing...")
+        """Ultra-low memory PDF processor driving the ParentDocumentRetriever."""
+        logger.info("Starting production-grade PDF processing...")
         loader = PyPDFLoader(file_path)
         
-        # UPGRADE: Regex-based Semantic Chunking.
-        # Forces splits at paragraph breaks (\n\n) or full stops (?<=\. ). 
-        # Never splits mid-sentence. 1000/250 overlap is ideal for technical logic.
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, 
-            chunk_overlap=250,
-            separators=["\n\n", "\n", "(?<=\\. )", " ", ""],
-            is_separator_regex=True
-        )
-        
+        # Completely reset index for new uploads
         self.vector_db = None 
+        self._init_retriever(force_new=True)
         
-        batch_size = 20 
+        batch_size = 10 # Micro-batching pages to keep RAM utilization flat
         current_batch = []
-        batch_counter = 1
-        global_chunk_id = 0 # Tracks absolute order of chunks across the entire document
 
         try:
             for page in loader.lazy_load():
-                page_chunks = splitter.split_documents([page])
-                
-                # UPGRADE: Inject Sequential IDs
-                # This allows us to re-assemble adjacent chunks logically during retrieval.
-                for chunk in page_chunks:
-                    chunk.metadata['chunk_id'] = global_chunk_id
-                    global_chunk_id += 1
-                    current_batch.append(chunk)
+                # Add source metadata for tracking
+                page.metadata['source_file'] = os.path.basename(file_path)
+                current_batch.append(page)
 
-                while len(current_batch) >= batch_size:
-                    process_batch = current_batch[:batch_size]
-                    self._process_and_index_batch(process_batch, batch_counter)
-                    current_batch = current_batch[batch_size:]
-                    batch_counter += 1
+                if len(current_batch) >= batch_size:
+                    logger.info(f"Adding batch of {len(current_batch)} pages to PDR...")
+                    # PDR automatically splits parents, splits children, embeds children, and saves parents to disk.
+                    self.retriever.add_documents(current_batch) 
+                    current_batch = []
+                    gc.collect()
 
             if current_batch:
-                self._process_and_index_batch(current_batch, batch_counter)
+                logger.info(f"Adding final batch of {len(current_batch)} pages to PDR...")
+                self.retriever.add_documents(current_batch)
 
-            if self.vector_db is None:
-                raise ValueError("The PDF appears to be empty.")
-
+            # Persist FAISS (Child chunks). LocalFileStore already persisted Parents to disk automatically.
             self.vector_db.save_local(self.index_path)
             
         except Exception as e:
@@ -191,56 +230,36 @@ class RAGEngine:
         finally:
             gc.collect()
 
-    def _process_and_index_batch(self, batch: list, batch_number: int):
-        logger.info(f"Indexing batch {batch_number} ({len(batch)} chunks)...")
-        if self.vector_db is None:
-            self.vector_db = FAISS.from_documents(batch, self.embedding)
-        else:
-            self.vector_db.add_documents(batch)
-        del batch
-        gc.collect()
-
     def generate_answer(self, question: str) -> str:
-        if self.vector_db is None:
+        if self.retriever is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        # UPGRADE: High-Precision MMR
-        # fetch_k=40 casts a wide net. k=8 ensures enough complete context.
-        # lambda_mult=0.85 strongly enforces relevance to prevent cross-topic mixing (e.g., k-NN vs Regression).
-        docs = self.vector_db.max_marginal_relevance_search(
-            question, 
-            k=8, 
-            fetch_k=40, 
-            lambda_mult=0.85 
-        )
+        # RETRIEVAL: Retrieves highly relevant 400-char chunks, but returns the full 1500-char parents.
+        # This completely eliminates cut-off sentences and fragmented context.
+        docs = self.retriever.invoke(question)
         
-        # UPGRADE: Sequential Context Merging
-        # Sort retrieved chunks by their original document order (chunk_id).
-        # This naturally stitches broken paragraphs and continuous algorithms back together.
-        docs.sort(key=lambda x: x.metadata.get('chunk_id', 0))
-        
-        # Join cleanly with a marker so the LLM understands when there is a jump in the document.
-        context = "\n\n...\n\n".join(doc.page_content.strip() for doc in docs)
+        # Merge all retrieved parent documents naturally.
+        context = "\n\n".join(doc.page_content.strip() for doc in docs)
 
-        # UPGRADE: ChatGPT-Tier Master Prompt
+        # GENERATION UPGRADE: Ultimate ChatGPT-Style Zero-Hallucination Prompt
         prompt = f"""
-        You are a highly capable, professional AI expert analyzing an uploaded document. 
-        Answer the user's question directly, confidently, and naturally, acting as the ultimate authority on this document.
+        You are a highly capable, professional AI expert analyzing a technical document. 
+        Answer the user's question directly, comprehensively, and confidently, acting as the ultimate authority on this document.
 
-        CRITICAL RULES FOR GENERATION:
-        1. NO AI-SPEAK: NEVER use phrases like "Based on the provided context", "According to the document", "The text states", or "I will attempt to answer". Start answering immediately.
-        2. NO HALLUCINATION: You are strictly limited to the provided Source Material. Do not invent facts, advantages, or details not explicitly stated.
-        3. STRICT ABSENCE FALLBACK: ONLY if the answer cannot be logically deduced from the Source Material, reply EXACTLY with: "I couldn't find that information in the uploaded document." Do not add apologies, filler, or partial guesses.
-        4. TOPIC ISOLATION: Never mix information from different topics. If asked about a specific algorithm (e.g., Random Forest), do NOT include details about unrelated concepts (e.g., Decision Trees) unless the text explicitly compares them.
-        5. NATURAL SYNTHESIS: The Source Material contains sequential text blocks. Read them chronologically and synthesize a single, cohesive, human-like response without mentioning that you are reading excerpts.
+        CRITICAL GENERATION RULES:
+        1. NO AI-SPEAK: NEVER use meta-phrases like "Based on the provided context", "According to the document", "The text states", or "I will attempt to answer". Start your answer immediately.
+        2. NO HALLUCINATION: You are strictly limited to the provided Source Material. Never invent facts, advantages, algorithms, or infer missing details.
+        3. STRICT ABSENCE FALLBACK: If and ONLY if the answer cannot be logically deduced from the Source Material, reply EXACTLY with: "I couldn't find that information in the uploaded document." Do not append this sentence if you have already generated an answer.
+        4. TOPIC ISOLATION: Never mix information from different topics. Compare concepts only if the document explicitly compares them.
+        5. NATURAL SYNTHESIS: Read the Source Material and synthesize a single, cohesive, human-like response. Do not mention that you are reading excerpts.
 
-        FORMATTING DIRECTIVES (Match the User's Intent):
-        - "What is..." -> Provide a clear, concise definition.
-        - "Explain" -> Provide a structured, well-formatted paragraph explanation.
-        - "List" -> Provide clean bullet points.
-        - "Algorithm" or "Steps" -> Provide a numbered, step-by-step sequence.
-        - "Difference", "Compare", or "Vs" -> Create a Markdown comparison table using ONLY facts from the text.
-        - Examples -> Always include examples from the document if they are present.
+        FORMATTING DIRECTIVES (Match Intent):
+        - Definitions -> Clear, concise, standard paragraph.
+        - Explanations -> Structured, well-formatted paragraphs.
+        - Lists / Advantages -> Clean bullet points.
+        - Algorithms / Steps -> Numbered step-by-step sequences.
+        - Differences / Comparisons -> Markdown comparison table.
+        - Examples -> Always include examples exactly as they appear in the document.
 
         Source Material:
         {context}
@@ -288,7 +307,7 @@ app.add_middleware(
 @app.get("/", response_model=HealthResponse)
 def health_check():
     global _rag_engine_instance
-    is_db_loaded = (_rag_engine_instance is not None) and (_rag_engine_instance.vector_db is not None)
+    is_db_loaded = (_rag_engine_instance is not None) and (_rag_engine_instance.retriever is not None)
     return HealthResponse(
         status="ok",
         message="API is running.",
