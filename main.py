@@ -1,5 +1,4 @@
 import os
-import re
 # ==========================================
 # STRICT MEMORY & CPU THREAD LOCKS (512MB-1GB RAM FIX)
 # DO NOT REMOVE: REQUIRED FOR RAILWAY DEPLOYMENT
@@ -14,7 +13,6 @@ os.environ['NUMEXPR_NUM_THREADS'] = '1'
 import sys
 import tempfile
 import logging
-import traceback
 import gc  # Garbage collection
 from contextlib import asynccontextmanager
 
@@ -40,7 +38,7 @@ except Exception as e:
     sys.exit(1)
 
 # ==========================================
-# 2. Logger Setup
+# 2. Logger Setup (Improved for Railway)
 # ==========================================
 logging.basicConfig(
     level=logging.INFO,
@@ -112,7 +110,6 @@ class RAGEngine:
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'},
-            # OPTIMIZATION: Normalizing embeddings vastly improves FAISS cosine similarity scoring
             encode_kwargs={'normalize_embeddings': True} 
         )
         
@@ -128,7 +125,7 @@ class RAGEngine:
         self.load_index()
 
     def load_index(self):
-        """Loads FAISS index from disk."""
+        """Loads FAISS index from disk safely."""
         if os.path.exists(self.index_path) and os.listdir(self.index_path):
             try:
                 self.vector_db = FAISS.load_local(
@@ -145,14 +142,11 @@ class RAGEngine:
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # OPTIMIZATION: Semantic Regex Splitter
-        # Prevents cutting sentences, definitions, and algorithms in half.
-        # 1000/250 provides excellent context windows while keeping RAM minimal.
+        # OPTIMIZATION: Adjusted Chunking parameters for technical PDFs 
+        # (Standard splitter, no semantic chunkers as requested)
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, 
-            chunk_overlap=250,
-            separators=["\n\n", "\n", "(?<=\\. )", " ", ""],
-            is_separator_regex=True
+            chunk_overlap=200
         )
         
         self.vector_db = None 
@@ -160,14 +154,13 @@ class RAGEngine:
         batch_size = 20 # Micro-batching to prevent RAM overflow on Railway
         current_batch = []
         batch_counter = 1
-        global_chunk_id = 0 # Track absolute document sequence for context merging
+        global_chunk_id = 0 
 
         try:
             for page in loader.lazy_load():
                 page_chunks = splitter.split_documents([page])
                 
-                # OPTIMIZATION: Tag chunks with sequential IDs
-                # This ensures we can naturally reconstruct neighboring paragraphs later.
+                # Tag chunks with sequential IDs to maintain context order during retrieval
                 for chunk in page_chunks:
                     chunk.metadata['chunk_id'] = global_chunk_id
                     global_chunk_id += 1
@@ -188,7 +181,7 @@ class RAGEngine:
             self.vector_db.save_local(self.index_path)
             
         except Exception as e:
-            logger.error(f"Error during PDF processing: {str(e)}")
+            logger.exception("Error during PDF processing")
             raise e
         finally:
             gc.collect()
@@ -207,33 +200,35 @@ class RAGEngine:
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        # OPTIMIZATION: High-Precision MMR Search
-        # fetch_k=30 ensures enough candidates. k=6 prevents overwhelming context limits.
-        # lambda_mult=0.85 prioritizes strict semantic relevance to prevent unrelated topic mixing.
+        # OPTIMIZATION: Updated MMR Search Parameters
+        # k=8, fetch_k=20, lambda_mult=0.85
         docs = self.vector_db.max_marginal_relevance_search(
             question, 
-            k=6, 
-            fetch_k=30, 
+            k=8, 
+            fetch_k=20, 
             lambda_mult=0.85 
         )
         
-        # OPTIMIZATION: Context Merging
-        # Sort retrieved chunks by their original document order (chunk_id).
-        # This naturally stitches broken paragraphs and neighboring data back together.
+        # Sort retrieved chunks by their original document order (chunk_id) to merge them naturally
         docs.sort(key=lambda x: x.metadata.get('chunk_id', 0))
         
         # Combine smoothly
         context = "\n\n".join(doc.page_content.strip() for doc in docs)
 
-        # OPTIMIZATION: Strict Prompt Engineering
+        # OPTIMIZATION: Enhanced Zero-Hallucination Prompt
         prompt = f"""
         You are a highly capable AI expert. Answer the user's question directly, accurately, and naturally using ONLY the provided Source Material.
 
         CRITICAL RULES:
-        1. DIRECT ANSWER: NEVER use introductory filler like "Based on the provided context", "According to the document", "The text states", or "I will answer". Start your answer immediately with the facts.
+        1. DIRECT ANSWER: NEVER use introductory filler like "Based on the provided context", "According to the document", "The text states", or "I will attempt to answer". Start your answer immediately with the facts.
         2. NO HALLUCINATION: You are strictly limited to the Source Material. Do not invent facts, advantages, or details not explicitly stated. Do not use outside knowledge.
-        3. STRICT ABSENCE FALLBACK: If the answer cannot be logically deduced from the Source Material, reply EXACTLY with: "I couldn't find that information in the uploaded document." Do not add apologies or extra text.
-        4. NATURAL FORMATTING: Use Markdown. Use bullet points for lists, numbered steps for algorithms, and Markdown tables for differences/comparisons. Keep definitions concise.
+        3. STRICT ABSENCE FALLBACK: If and ONLY if the answer cannot be logically deduced from the Source Material, reply EXACTLY with: "I couldn't find that information in the uploaded document." Do not add apologies or extra text. Never append this sentence if you have already generated an answer.
+        4. NATURAL FORMATTING: Use Markdown.
+           - Definitions -> paragraph
+           - Algorithms -> numbered steps
+           - Advantages -> bullet points
+           - Comparisons -> markdown table
+           - Examples -> include document examples if available
 
         Source Material:
         {context}
@@ -309,7 +304,7 @@ async def upload_pdf(file: UploadFile = File(...)):
             filename=file.filename
         )
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Exception occurred during PDF upload and processing.")
         raise HTTPException(status_code=500, detail="Internal server error.")
 
 @app.post("/chat", response_model=ChatResponse)
@@ -324,5 +319,5 @@ def chat(request: ChatRequest):
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Exception occurred during chat generation.")
         raise HTTPException(status_code=500, detail="Failed to generate response.")
