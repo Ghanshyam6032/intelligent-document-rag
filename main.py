@@ -83,7 +83,6 @@ def load_heavy_libraries():
     if ChatGroq is None:
         logger.info("Importing heavy AI libraries on strict memory diet...")
         
-        # PyTorch limits set before import
         import torch
         torch.set_num_threads(1)
         
@@ -108,7 +107,6 @@ class RAGEngine:
         load_heavy_libraries()
         
         logger.info("Initializing FAST Embedding Model...")
-        # Using a very memory-efficient config (all-MiniLM is excellent for low RAM)
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'} 
@@ -118,7 +116,7 @@ class RAGEngine:
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             api_key=settings.GROQ_API_KEY,
-            temperature=0.1 # Low temp for factual responses
+            temperature=0.0 # Changed to 0.0 for maximum factual strictness
         )
         
         self.vector_db = None
@@ -143,13 +141,11 @@ class RAGEngine:
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # INCREASED CHUNK SIZE & OVERLAP: Technical PDFs need larger context blocks.
-        # 800/150 gives enough meat per chunk without causing massive memory spikes.
+        # Kept at 800/150: Optimal for retaining technical context and formulas across page breaks
         splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
         
         self.vector_db = None 
         
-        # MICRO-BATCHING: Process 20 chunks at a time to prevent RAM overflow
         batch_size = 20 
         current_batch = []
         batch_counter = 1
@@ -160,15 +156,11 @@ class RAGEngine:
                 current_batch.extend(page_chunks)
 
                 while len(current_batch) >= batch_size:
-                    # Slice the batch exactly to batch_size
                     process_batch = current_batch[:batch_size]
                     self._process_and_index_batch(process_batch, batch_counter)
-                    
-                    # Keep the remainder
                     current_batch = current_batch[batch_size:]
                     batch_counter += 1
 
-            # Process leftover chunks
             if current_batch:
                 self._process_and_index_batch(current_batch, batch_counter)
 
@@ -184,7 +176,6 @@ class RAGEngine:
             gc.collect()
 
     def _process_and_index_batch(self, batch: list, batch_number: int):
-        """Embeds micro-batches and forces memory clear."""
         logger.info(f"Indexing batch {batch_number} ({len(batch)} chunks)...")
         
         if self.vector_db is None:
@@ -199,9 +190,7 @@ class RAGEngine:
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        # UPGRADE: Replaced similarity_search with MMR (Maximal Marginal Relevance)
-        # fetch_k=30 pulls a broad net of relevant chunks, k=6 picks the most diverse and relevant 6.
-        # lambda_mult=0.7 favors relevance while ensuring enough diversity to catch fragmented answers.
+        # MMR fetches 30 chunks, picks the most diverse 6. Prevents repeating the same paragraph.
         docs = self.vector_db.max_marginal_relevance_search(
             question, 
             k=6, 
@@ -210,22 +199,25 @@ class RAGEngine:
         )
         context = "\n\n---\n\n".join(doc.page_content for doc in docs)
 
-        # UPGRADE: Improved system prompt for natural synthesis and lower false-negative fallback rates
+        # STRICT PROMPT: Enforcing no-AI-speak and exact formatting requirements
         prompt = f"""
-        You are an expert technical AI assistant analyzing a provided document. 
-        Read the extracted context below carefully. It contains relevant, possibly fragmented snippets from the uploaded document.
+        You are a subject matter expert and an authoritative teacher. Answer the user's question directly using ONLY the provided Source Material.
         
-        Instructions:
-        1. Answer the user's question comprehensively based ONLY on the provided context.
-        2. The necessary information might be spread across multiple chunks. Synthesize these pieces to form a complete, coherent, and natural answer.
-        3. Do NOT rely on outside knowledge or hallucinate facts.
-        4. If the context contains partial information, provide what is available and clearly state the limitations based on the text.
-        5. ONLY if the context is entirely irrelevant and completely lacks any information to answer the question, reply strictly with: "I couldn't find that information in the uploaded document."
-        
-        Context:
+        CRITICAL RULES:
+        1. NO AI-SPEAK: NEVER use phrases like "Based on the provided context", "According to the document", "The text states", "Here is the answer", or "I will attempt to answer". Start answering immediately with the facts.
+        2. TONE: Write as if you are a textbook directly stating facts. Do not summarize; answer the question directly. Do not repeat the question.
+        3. NO OUTSIDE KNOWLEDGE: If the answer cannot be logically deduced from the Source Material, you MUST output exactly this exact phrase and nothing else: "I couldn't find that information in the uploaded document." Do not add apologies or disclaimers.
+        4. SYNTHESIS: Seamlessly combine information from multiple snippets if required to form a complete answer. 
+        5. FORMATTING: Use clean Markdown. Match the user's intent:
+           - If they ask to "List", provide a bulleted list.
+           - If they ask to "Explain", provide a coherent paragraph explanation.
+           - If they ask for an "Algorithm" or "Steps", provide a numbered step-by-step guide.
+        6. MATH & DATA: Preserve mathematical formulas exactly as they appear in the source. Keep the answer concise unless the user explicitly asked for a detailed explanation.
+
+        Source Material:
         {context}
         
-        Question:
+        User Question:
         {question}
         """
 
