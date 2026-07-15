@@ -110,6 +110,7 @@ class RAGEngine:
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'},
+            # OPTIMIZATION: Normalizing embeddings improves FAISS similarity scoring with zero RAM cost
             encode_kwargs={'normalize_embeddings': True} 
         )
         
@@ -142,11 +143,14 @@ class RAGEngine:
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # OPTIMIZATION: Adjusted Chunking parameters for technical PDFs 
-        # (Standard splitter, no semantic chunkers as requested)
+        # OPTIMIZATION: Semantic Regex Splitter
+        # 1000/200 provides excellent context windows while keeping RAM minimal.
+        # Regex forces splits at paragraphs/sentences, protecting tables and algorithms.
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, 
-            chunk_overlap=200
+            chunk_overlap=200,
+            separators=["\n\n", "\n", "(?<=\\. )", " ", ""],
+            is_separator_regex=True
         )
         
         self.vector_db = None 
@@ -154,13 +158,14 @@ class RAGEngine:
         batch_size = 20 # Micro-batching to prevent RAM overflow on Railway
         current_batch = []
         batch_counter = 1
-        global_chunk_id = 0 
+        global_chunk_id = 0 # Track absolute document sequence for context merging
 
         try:
             for page in loader.lazy_load():
                 page_chunks = splitter.split_documents([page])
                 
-                # Tag chunks with sequential IDs to maintain context order during retrieval
+                # OPTIMIZATION: Tag chunks with sequential IDs
+                # This ensures we can naturally reconstruct neighboring paragraphs during generation.
                 for chunk in page_chunks:
                     chunk.metadata['chunk_id'] = global_chunk_id
                     global_chunk_id += 1
@@ -201,7 +206,8 @@ class RAGEngine:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
         # OPTIMIZATION: Updated MMR Search Parameters
-        # k=8, fetch_k=20, lambda_mult=0.85
+        # fetch_k=20 ensures enough candidates. k=8 prevents overwhelming context limits.
+        # lambda_mult=0.85 prioritizes strict semantic relevance.
         docs = self.vector_db.max_marginal_relevance_search(
             question, 
             k=8, 
@@ -209,20 +215,22 @@ class RAGEngine:
             lambda_mult=0.85 
         )
         
-        # Sort retrieved chunks by their original document order (chunk_id) to merge them naturally
+        # OPTIMIZATION: Context Merging
+        # Sort retrieved chunks by their original document order (chunk_id).
+        # This naturally stitches broken paragraphs and neighboring data back together.
         docs.sort(key=lambda x: x.metadata.get('chunk_id', 0))
         
         # Combine smoothly
         context = "\n\n".join(doc.page_content.strip() for doc in docs)
 
-        # OPTIMIZATION: Enhanced Zero-Hallucination Prompt
+        # OPTIMIZATION: Ironclad Prompt Engineering
         prompt = f"""
-        You are a highly capable AI expert. Answer the user's question directly, accurately, and naturally using ONLY the provided Source Material.
+        You are a highly capable AI expert. Answer the user's question directly, accurately, and naturally using ONLY the provided Source Material. You may summarize or combine relevant retrieved information to provide a clear answer.
 
         CRITICAL RULES:
         1. DIRECT ANSWER: NEVER use introductory filler like "Based on the provided context", "According to the document", "The text states", or "I will attempt to answer". Start your answer immediately with the facts.
         2. NO HALLUCINATION: You are strictly limited to the Source Material. Do not invent facts, advantages, or details not explicitly stated. Do not use outside knowledge.
-        3. STRICT ABSENCE FALLBACK: If and ONLY if the answer cannot be logically deduced from the Source Material, reply EXACTLY with: "I couldn't find that information in the uploaded document." Do not add apologies or extra text. Never append this sentence if you have already generated an answer.
+        3. STRICT ABSENCE FALLBACK: If and ONLY if the Source Material contains absolutely no relevant information to construct an answer, reply EXACTLY with: "I couldn't find that information in the uploaded document." Never append this sentence if you have already generated an answer.
         4. NATURAL FORMATTING: Use Markdown.
            - Definitions -> paragraph
            - Algorithms -> numbered steps
