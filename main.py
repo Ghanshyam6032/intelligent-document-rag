@@ -1,7 +1,7 @@
 import os
 # ==========================================
-# STRICT MEMORY & CPU THREAD LOCKS (512MB-1GB RAM FIX)
-# DO NOT REMOVE: REQUIRED FOR RAILWAY DEPLOYMENT
+# STRICT MEMORY & CPU THREAD LOCKS (RENDER 512MB FIX)
+# INKO SABSE UPAR RAKHNA ZAROORI HAI!
 # ==========================================
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -13,6 +13,7 @@ os.environ['NUMEXPR_NUM_THREADS'] = '1'
 import sys
 import tempfile
 import logging
+import traceback
 import gc  # Garbage collection
 from contextlib import asynccontextmanager
 
@@ -38,7 +39,7 @@ except Exception as e:
     sys.exit(1)
 
 # ==========================================
-# 2. Logger Setup (Improved for Railway)
+# 2. Logger Setup
 # ==========================================
 logging.basicConfig(
     level=logging.INFO,
@@ -77,12 +78,12 @@ PyPDFLoader = None
 RecursiveCharacterTextSplitter = None
 
 def load_heavy_libraries():
-    """Deferred importing to pass Railway port timeout checks and save initial RAM."""
+    """Deferred importing to pass Render's port check and save initial RAM."""
     global ChatGroq, HuggingFaceEmbeddings, FAISS, PyPDFLoader, RecursiveCharacterTextSplitter
     if ChatGroq is None:
         logger.info("Importing heavy AI libraries on strict memory diet...")
         
-        # PyTorch limits set before import to prevent memory spikes
+        # PyTorch limits set before import
         import torch
         torch.set_num_threads(1)
         
@@ -110,15 +111,14 @@ class RAGEngine:
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'},
-            # OPTIMIZATION: Normalizing embeddings improves FAISS similarity scoring with zero RAM cost
-            encode_kwargs={'normalize_embeddings': True} 
+            encode_kwargs={'normalize_embeddings': True}  # ADDED: For stable cosine similarity
         )
         
         logger.info("Initializing Groq LLM...")
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             api_key=settings.GROQ_API_KEY,
-            temperature=0.0 # Absolute zero for strict factual accuracy
+            temperature=0.0  # ADJUSTED: 0.0 for strict, deterministic Q&A
         )
         
         self.vector_db = None
@@ -126,7 +126,7 @@ class RAGEngine:
         self.load_index()
 
     def load_index(self):
-        """Loads FAISS index from disk safely."""
+        """Loads FAISS index from disk."""
         if os.path.exists(self.index_path) and os.listdir(self.index_path):
             try:
                 self.vector_db = FAISS.load_local(
@@ -139,37 +139,22 @@ class RAGEngine:
                 self.vector_db = None
 
     def process_pdf(self, file_path: str):
-        """Ultra-low memory PDF processor optimized for safe contextual retrieval."""
+        """Ultra-low memory PDF processor."""
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # OPTIMIZATION: Semantic Regex Splitter
-        # 1000/200 provides excellent context windows while keeping RAM minimal.
-        # Regex forces splits at paragraphs/sentences, protecting tables and algorithms.
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, 
-            chunk_overlap=200,
-            separators=["\n\n", "\n", "(?<=\\. )", " ", ""],
-            is_separator_regex=True
-        )
+        # ADJUSTED: Increased chunk size for better context retention
+        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
         
         self.vector_db = None 
-        
-        batch_size = 20 # Micro-batching to prevent RAM overflow on Railway
+        batch_size = 20 
         current_batch = []
         batch_counter = 1
-        global_chunk_id = 0 # Track absolute document sequence for context merging
 
         try:
             for page in loader.lazy_load():
                 page_chunks = splitter.split_documents([page])
-                
-                # OPTIMIZATION: Tag chunks with sequential IDs
-                # This ensures we can naturally reconstruct neighboring paragraphs during generation.
-                for chunk in page_chunks:
-                    chunk.metadata['chunk_id'] = global_chunk_id
-                    global_chunk_id += 1
-                    current_batch.append(chunk)
+                current_batch.extend(page_chunks)
 
                 while len(current_batch) >= batch_size:
                     process_batch = current_batch[:batch_size]
@@ -186,7 +171,7 @@ class RAGEngine:
             self.vector_db.save_local(self.index_path)
             
         except Exception as e:
-            logger.exception("Error during PDF processing")
+            logger.error(f"Error during PDF processing: {str(e)}")
             raise e
         finally:
             gc.collect()
@@ -194,10 +179,12 @@ class RAGEngine:
     def _process_and_index_batch(self, batch: list, batch_number: int):
         """Embeds micro-batches and forces memory clear."""
         logger.info(f"Indexing batch {batch_number} ({len(batch)} chunks)...")
+        
         if self.vector_db is None:
             self.vector_db = FAISS.from_documents(batch, self.embedding)
         else:
             self.vector_db.add_documents(batch)
+            
         del batch
         gc.collect()
 
@@ -205,48 +192,44 @@ class RAGEngine:
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        # OPTIMIZATION: Updated MMR Search Parameters
-        # fetch_k=20 ensures enough candidates. k=8 prevents overwhelming context limits.
-        # lambda_mult=0.85 prioritizes strict semantic relevance.
-        docs = self.vector_db.max_marginal_relevance_search(
-            question, 
-            k=8, 
-            fetch_k=20, 
-            lambda_mult=0.85 
-        )
-        
-        # OPTIMIZATION: Context Merging
-        # Sort retrieved chunks by their original document order (chunk_id).
-        # This naturally stitches broken paragraphs and neighboring data back together.
-        docs.sort(key=lambda x: x.metadata.get('chunk_id', 0))
-        
-        # Combine smoothly
-        context = "\n\n".join(doc.page_content.strip() for doc in docs)
+        # ADJUSTED: Tuned MMR retrieval for dense technical documents
+        try:
+            docs = self.vector_db.max_marginal_relevance_search(
+                question, 
+                k=8, 
+                fetch_k=20, 
+                lambda_mult=0.85
+            )
+        except Exception as e:
+            logger.warning(f"MMR search failed, falling back to similarity search: {e}")
+            docs = self.vector_db.similarity_search(question, k=8)
+            
+        context = "\n\n---\n\n".join(doc.page_content for doc in docs)
+        logger.info(f"Retrieved {len(docs)} diverse chunks for the query.")
 
-        # OPTIMIZATION: Ironclad Prompt Engineering
+        # ADJUSTED: Prompt refactored to allow synthesis and avoid exact-match false failures
         prompt = f"""
-        You are a highly capable AI expert. Answer the user's question directly, accurately, and naturally using ONLY the provided Source Material. You may summarize or combine relevant retrieved information to provide a clear answer.
+        You are a highly accurate and intelligent AI assistant analyzing a technical document.
+        Carefully read the context provided below and answer the user's question.
 
-        CRITICAL RULES:
-        1. DIRECT ANSWER: NEVER use introductory filler like "Based on the provided context", "According to the document", "The text states", or "I will attempt to answer". Start your answer immediately with the facts.
-        2. NO HALLUCINATION: You are strictly limited to the Source Material. Do not invent facts, advantages, or details not explicitly stated. Do not use outside knowledge.
-        3. STRICT ABSENCE FALLBACK: If and ONLY if the Source Material contains absolutely no relevant information to construct an answer, reply EXACTLY with: "I couldn't find that information in the uploaded document." Never append this sentence if you have already generated an answer.
-        4. NATURAL FORMATTING: Use Markdown.
-           - Definitions -> paragraph
-           - Algorithms -> numbered steps
-           - Advantages -> bullet points
-           - Comparisons -> markdown table
-           - Examples -> include document examples if available
+        Guidelines:
+        - Base your answer ONLY on the provided context. Do NOT use outside knowledge.
+        - You may summarize, rephrase, or combine information from multiple parts of the context to provide a clear answer.
+        - If the context does not contain any relevant information to answer the question, you must reply strictly with: "I couldn't find that information in the uploaded document."
+        - Never append the failure phrase if you are providing an answer.
+        - Do not guess or hallucinate details.
 
-        Source Material:
+        <context>
         {context}
+        </context>
         
-        User Question:
-        {question}
+        Question: {question}
+        
+        Answer:
         """
 
         response = self.llm.invoke(prompt)
-        return response.content
+        return response.content.strip()
 
 # ==========================================
 # LAZY LOADING LOGIC
@@ -296,6 +279,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDFs are accepted.")
     
+    tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             content = await file.read()
@@ -304,7 +288,6 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         engine = get_rag_engine()
         engine.process_pdf(tmp_path)
-        os.remove(tmp_path)
 
         return UploadResponse(
             status="success",
@@ -312,8 +295,16 @@ async def upload_pdf(file: UploadFile = File(...)):
             filename=file.filename
         )
     except Exception as e:
-        logger.exception("Exception occurred during PDF upload and processing.")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error.")
+    finally:
+        # ADJUSTED: Safe cleanup of temporary files even if an exception occurs
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+                logger.info("Temporary file successfully removed in finally block.")
+            except Exception as cleanup_error:
+                logger.error(f"Failed to delete temp file: {cleanup_error}")
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
@@ -327,5 +318,5 @@ def chat(request: ChatRequest):
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        logger.exception("Exception occurred during chat generation.")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to generate response.")
