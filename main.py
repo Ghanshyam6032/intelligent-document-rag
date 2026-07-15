@@ -1,6 +1,6 @@
 import os
 # ==========================================
-# STRICT MEMORY & CPU THREAD LOCKS (RENDER 512MB FIX)
+# STRICT MEMORY & CPU THREAD LOCKS (RENDER/RAILWAY < 1GB FIX)
 # INKO SABSE UPAR RAKHNA ZAROORI HAI!
 # ==========================================
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
@@ -78,7 +78,7 @@ PyPDFLoader = None
 RecursiveCharacterTextSplitter = None
 
 def load_heavy_libraries():
-    """Deferred importing to pass Render's port check and save initial RAM."""
+    """Deferred importing to pass Render/Railway port checks and save RAM."""
     global ChatGroq, HuggingFaceEmbeddings, FAISS, PyPDFLoader, RecursiveCharacterTextSplitter
     if ChatGroq is None:
         logger.info("Importing heavy AI libraries on strict memory diet...")
@@ -108,17 +108,17 @@ class RAGEngine:
         load_heavy_libraries()
         
         logger.info("Initializing FAST Embedding Model...")
-        # Using a very memory-efficient config
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'} 
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
         )
         
         logger.info("Initializing Groq LLM...")
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             api_key=settings.GROQ_API_KEY,
-            temperature=0.1
+            temperature=0.0
         )
         
         self.vector_db = None
@@ -139,18 +139,22 @@ class RAGEngine:
                 self.vector_db = None
 
     def process_pdf(self, file_path: str):
-        """Ultra-low memory PDF processor."""
+        """Ultra-low memory PDF processor using standard stable chunking."""
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # IMPROVEMENT: Increased chunk_size to 800 and overlap to 150.
-        # 500 was too small and often broke sentences/context apart, 
-        # causing the LLM to miss the broader meaning.
-        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+        # IMPROVEMENT: Optimized standard chunking. 
+        # 1000 size + 250 overlap naturally keeps most definitions/algorithms together.
+        # Strict fallback separators prioritize keeping paragraphs intact.
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, 
+            chunk_overlap=250,
+            separators=["\n\n", "\n", ". ", " ", ""]
+        )
         
         self.vector_db = None 
         
-        # MICRO-BATCHING: Only process 20 chunks at a time (kept exactly the same to preserve memory)
+        # MICRO-BATCHING: Process 20 chunks at a time for stable memory footprint.
         batch_size = 20 
         current_batch = []
         batch_counter = 1
@@ -161,15 +165,11 @@ class RAGEngine:
                 current_batch.extend(page_chunks)
 
                 while len(current_batch) >= batch_size:
-                    # Slice the batch exactly to batch_size
                     process_batch = current_batch[:batch_size]
                     self._process_and_index_batch(process_batch, batch_counter)
-                    
-                    # Keep the remainder
                     current_batch = current_batch[batch_size:]
                     batch_counter += 1
 
-            # Process leftover chunks
             if current_batch:
                 self._process_and_index_batch(current_batch, batch_counter)
 
@@ -200,33 +200,34 @@ class RAGEngine:
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        # IMPROVEMENT: Switched to Max Marginal Relevance (MMR) search.
-        # This fetches 20 documents initially and filters them down to the 5 most relevant 
-        # AND diverse chunks. This prevents retrieving 4 identical chunks and missing the answer.
+        # IMPROVEMENT: Tuned standard MMR retrieval for maximum relevance and diversity.
+        # Fetching 30 candidate chunks and selecting the top 6 most relevant/diverse ones.
         try:
-            docs = self.vector_db.max_marginal_relevance_search(question, k=5, fetch_k=20)
+            docs = self.vector_db.max_marginal_relevance_search(
+                question, 
+                k=6, 
+                fetch_k=30, 
+                lambda_mult=0.85
+            )
+            logger.info(f"Successfully retrieved {len(docs)} chunks using MMR.")
         except Exception as e:
             logger.warning(f"MMR search failed, falling back to similarity search: {e}")
-            docs = self.vector_db.similarity_search(question, k=5)
+            docs = self.vector_db.similarity_search(question, k=6)
             
-        # IMPROVEMENT: Added clear separators between chunks for the LLM to read better.
-        context = "\n\n---\n\n".join(doc.page_content for doc in docs)
-        
-        logger.info(f"Retrieved {len(docs)} diverse chunks for the query.")
+        # Standard robust context joining
+        context = "\n\n---\n\n".join(doc.page_content.strip() for doc in docs)
 
-        # IMPROVEMENT: Completely refactored the prompt. 
-        # Removed the word "exact" as Llama models take it literally and refuse to synthesize answers.
-        # Added clear XML-style tags for separation.
+        # IMPROVEMENT: Prompt strictly demands synthesis and absolutely forbids hallucinations.
         prompt = f"""
         You are a highly accurate and intelligent AI assistant analyzing a technical document.
-        Carefully read the context provided below and answer the user's question.
+        Carefully read the retrieved document context provided below and answer the user's question.
 
         Guidelines:
-        - Base your answer ONLY on the provided context. Do NOT use outside knowledge.
-        - You may summarize, rephrase, or combine information from multiple parts of the context to provide a clear answer.
-        - If the context does not contain any relevant information to answer the question, you must reply strictly with: "I couldn't find that information in the uploaded document."
-        - Never append the failure phrase if you are providing an answer.
-        - Do not guess or hallucinate details.
+        1. Base your answer ONLY on the provided context. Do NOT use outside knowledge.
+        2. You must synthesize, summarize, and combine information from multiple parts of the context if needed to form a complete answer. Do NOT require an exact sentence match.
+        3. If the provided context does not contain any relevant information to answer the question, you MUST reply exactly and only with: "I couldn't find that information in the uploaded document."
+        4. Never append the failure phrase if you are providing an answer.
+        5. Do not guess or hallucinate details.
 
         <context>
         {context}
@@ -288,6 +289,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDFs are accepted.")
     
+    tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             content = await file.read()
@@ -296,7 +298,6 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         engine = get_rag_engine()
         engine.process_pdf(tmp_path)
-        os.remove(tmp_path)
 
         return UploadResponse(
             status="success",
@@ -304,8 +305,17 @@ async def upload_pdf(file: UploadFile = File(...)):
             filename=file.filename
         )
     except Exception as e:
+        logger.error(f"Upload error: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail="Internal server error.")
+        raise HTTPException(status_code=500, detail="Internal server error during PDF processing.")
+    finally:
+        # Safe temp file cleanup ensuring zero disk leaks
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+                logger.info("Temporary file successfully removed in finally block.")
+            except Exception as cleanup_error:
+                logger.error(f"Failed to delete temp file: {cleanup_error}")
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
@@ -319,5 +329,6 @@ def chat(request: ChatRequest):
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
+        logger.error(f"Chat error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to generate response.")
