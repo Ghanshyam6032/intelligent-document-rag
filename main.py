@@ -1,5 +1,4 @@
 import os
-import re
 # ==========================================
 # STRICT MEMORY & CPU THREAD LOCKS (512MB-1GB RAM FIX)
 # REQUIRED FOR STABLE RAILWAY/RENDER DEPLOYMENT
@@ -109,6 +108,7 @@ class RAGEngine:
         load_heavy_libraries()
         
         logger.info("Initializing FAST Embedding Model...")
+        # all-MiniLM remains the best choice for high-quality retrieval under strict RAM limits.
         self.embedding = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'} 
@@ -118,7 +118,7 @@ class RAGEngine:
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             api_key=settings.GROQ_API_KEY,
-            temperature=0.0 # Absolute zero for maximum factual fidelity
+            temperature=0.0 # Strict zero temperature for maximum fidelity and zero hallucination
         )
         
         self.vector_db = None
@@ -143,13 +143,13 @@ class RAGEngine:
         logger.info("Starting ultra-low memory PDF parsing...")
         loader = PyPDFLoader(file_path)
         
-        # RETRIEVAL UPGRADE 1: Regex-based Semantic Chunking.
+        # UPGRADE: Regex-based Semantic Chunking.
         # Forces splits at paragraph breaks (\n\n) or full stops (?<=\. ). 
-        # Never splits mid-sentence. 1200/300 ensures definitions stay intact.
+        # Never splits mid-sentence. 1000/250 overlap is ideal for technical logic.
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1200, 
-            chunk_overlap=300,
-            separators=["\n\n", "\n", "(?<=\. )", " ", ""],
+            chunk_size=1000, 
+            chunk_overlap=250,
+            separators=["\n\n", "\n", "(?<=\\. )", " ", ""],
             is_separator_regex=True
         )
         
@@ -158,14 +158,14 @@ class RAGEngine:
         batch_size = 20 
         current_batch = []
         batch_counter = 1
-        global_chunk_id = 0 # Track absolute order of chunks
+        global_chunk_id = 0 # Tracks absolute order of chunks across the entire document
 
         try:
             for page in loader.lazy_load():
                 page_chunks = splitter.split_documents([page])
                 
-                # RETRIEVAL UPGRADE 2: Inject Sequential IDs
-                # This allows us to re-assemble adjacent chunks later.
+                # UPGRADE: Inject Sequential IDs
+                # This allows us to re-assemble adjacent chunks logically during retrieval.
                 for chunk in page_chunks:
                     chunk.metadata['chunk_id'] = global_chunk_id
                     global_chunk_id += 1
@@ -204,8 +204,9 @@ class RAGEngine:
         if self.vector_db is None:
             raise ValueError("Vector database is empty. Please upload a document first.")
 
-        # RETRIEVAL UPGRADE 3: Wider Net MMR
-        # fetch_k=40 pulls a massive context pool. k=8 ensures we have all pieces of the puzzle.
+        # UPGRADE: High-Precision MMR
+        # fetch_k=40 casts a wide net. k=8 ensures enough complete context.
+        # lambda_mult=0.85 strongly enforces relevance to prevent cross-topic mixing (e.g., k-NN vs Regression).
         docs = self.vector_db.max_marginal_relevance_search(
             question, 
             k=8, 
@@ -213,32 +214,33 @@ class RAGEngine:
             lambda_mult=0.85 
         )
         
-        # RETRIEVAL UPGRADE 4: Sequential Context Merging
+        # UPGRADE: Sequential Context Merging
         # Sort retrieved chunks by their original document order (chunk_id).
-        # If chunks 4, 5, and 6 were retrieved, they will be stitched back together logically,
-        # solving the "partial paragraph/cut-off sentence" issue entirely.
+        # This naturally stitches broken paragraphs and continuous algorithms back together.
         docs.sort(key=lambda x: x.metadata.get('chunk_id', 0))
         
-        # Join cleanly. Because they are sorted, overlaps read naturally to the LLM.
-        context = "\n\n".join(doc.page_content.strip() for doc in docs)
+        # Join cleanly with a marker so the LLM understands when there is a jump in the document.
+        context = "\n\n...\n\n".join(doc.page_content.strip() for doc in docs)
 
+        # UPGRADE: ChatGPT-Tier Master Prompt
         prompt = f"""
-        You are a highly capable, professional AI assistant. Answer the user's question directly, confidently, and naturally, using ONLY the provided Source Material.
+        You are a highly capable, professional AI expert analyzing an uploaded document. 
+        Answer the user's question directly, confidently, and naturally, acting as the ultimate authority on this document.
 
-        CRITICAL RULES:
+        CRITICAL RULES FOR GENERATION:
         1. NO AI-SPEAK: NEVER use phrases like "Based on the provided context", "According to the document", "The text states", or "I will attempt to answer". Start answering immediately.
-        2. NO HALLUCINATION: Rely entirely on the Source Material. Do not use outside knowledge.
-        3. STRICT ABSENCE FALLBACK: ONLY if the answer cannot be logically deduced from the Source Material, reply EXACTLY with: "I couldn't find that information in the uploaded document." Do not add apologies or extra text.
-        4. TOPIC ISOLATION: Be incredibly precise. If asked about a specific concept (e.g., k-NN), do not include details about unrelated concepts (e.g., Regression) just because they are in the context.
-        5. SYNTHESIS: The Source Material contains sequential text blocks. Combine them seamlessly into one coherent response.
-        6. FIDELITY: Preserve mathematical formulas, variables, and technical terminology exactly as written.
+        2. NO HALLUCINATION: You are strictly limited to the provided Source Material. Do not invent facts, advantages, or details not explicitly stated.
+        3. STRICT ABSENCE FALLBACK: ONLY if the answer cannot be logically deduced from the Source Material, reply EXACTLY with: "I couldn't find that information in the uploaded document." Do not add apologies, filler, or partial guesses.
+        4. TOPIC ISOLATION: Never mix information from different topics. If asked about a specific algorithm (e.g., Random Forest), do NOT include details about unrelated concepts (e.g., Decision Trees) unless the text explicitly compares them.
+        5. NATURAL SYNTHESIS: The Source Material contains sequential text blocks. Read them chronologically and synthesize a single, cohesive, human-like response without mentioning that you are reading excerpts.
 
         FORMATTING DIRECTIVES (Match the User's Intent):
-        - If asked "What is..." -> Provide a clear, exact definition followed by brief context.
-        - If asked to "Explain" -> Provide a comprehensive, natural paragraph explanation.
-        - If asked to "List" or "Advantages/Disadvantages" -> Provide concise bullet points.
-        - If asked for an "Algorithm" or "Steps" -> Provide a numbered, step-by-step list.
-        - If asked for a "Difference", "Compare", or "Vs" -> Create a clean Markdown comparison table.
+        - "What is..." -> Provide a clear, concise definition.
+        - "Explain" -> Provide a structured, well-formatted paragraph explanation.
+        - "List" -> Provide clean bullet points.
+        - "Algorithm" or "Steps" -> Provide a numbered, step-by-step sequence.
+        - "Difference", "Compare", or "Vs" -> Create a Markdown comparison table using ONLY facts from the text.
+        - Examples -> Always include examples from the document if they are present.
 
         Source Material:
         {context}
