@@ -3,400 +3,491 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Assistant</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+    <title>DocuMind AI | Advanced PDF Analytics</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+
     <style>
         :root {
-            --space-black: #030305;
-            --surface-dark: rgba(15, 15, 20, 0.6);
-            --surface-light: rgba(255, 255, 255, 0.03);
-            
-            --glow-primary: #8b5cf6;
-            --glow-secondary: #ec4899;
-            --text-main: #f8fafc;
-            --text-dim: #8b949e;
-            
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --glass-blur: blur(20px);
-            
-            --radius-xl: 24px;
-            --radius-lg: 16px;
-            --radius-md: 12px;
-            
-            --transition-smooth: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            --bg-sidebar: #0a0a0a;
+            --sidebar-text: #ececec;
+            --sidebar-hover: #1f1f1f;
+            --bg-main: #141414;
+            --bg-input: #1f1f1f;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border-color: #2d2d2d;
+            --accent: #10b981; 
+            --accent-hover: #059669;
+            --user-bubble: linear-gradient(135deg, #3b82f6, #6366f1);
+            --bot-bubble: #262626;
+            --danger: #ef4444;
+            --success: #10b981;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body, html { height: 100%; width: 100%; background-color: var(--bg-main); color: var(--text-main); overflow: hidden; }
         
-        /* --- MOBILE ZOOM FIX (ONLY FOR PHONES) --- */
-        @media (max-width: 768px) {
-            input, textarea, button, select {
-                font-size: 16px !important;
-                touch-action: manipulation;
-            }
-        }
+        /* Layout & Sidebar */
+        .layout { display: flex; height: 100vh; width: 100vw; }
         
-        body {
-            font-family: 'Outfit', sans-serif;
-            background-color: var(--space-black);
-            color: var(--text-main);
-            height: 100dvh;
-            display: flex;
-            overflow: hidden;
-            position: relative;
-        }
-
-        /* --- CINEMATIC BACKGROUND GLOWS --- */
-        .ambient-light-1 {
-            position: absolute; top: -10%; left: -10%; width: 50vw; height: 50vw;
-            background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
-            border-radius: 50%; filter: blur(60px); z-index: 0; animation: pulseGlow 8s infinite alternate;
-        }
-        .ambient-light-2 {
-            position: absolute; bottom: -20%; right: -10%; width: 60vw; height: 60vw;
-            background: radial-gradient(circle, rgba(236, 72, 153, 0.1) 0%, transparent 70%);
-            border-radius: 50%; filter: blur(80px); z-index: 0; animation: pulseGlow 10s infinite alternate-reverse;
-        }
-
-        @keyframes pulseGlow { 0% { opacity: 0.5; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1.2); } }
-        @keyframes floatUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* --- SIDEBAR --- */
         .sidebar {
-            width: 300px; height: 100%;
-            background: linear-gradient(180deg, rgba(10,10,15,0.8) 0%, rgba(5,5,8,0.95) 100%);
-            backdrop-filter: var(--glass-blur); border-right: 1px solid var(--glass-border);
-            display: flex; flex-direction: column; z-index: 50; flex-shrink: 0;
-            position: absolute; left: 0; top: 0; bottom: 0; transform: translateX(-100%); transition: var(--transition-smooth);
+            width: 280px; background-color: var(--bg-sidebar); color: var(--sidebar-text);
+            display: flex; flex-direction: column; padding: 1rem;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 100;
+            border-right: 1px solid var(--border-color);
         }
-        .sidebar.open { transform: translateX(0); }
-        
-        .sidebar-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px);
-            z-index: 40; opacity: 0; pointer-events: none; transition: var(--transition-smooth);
-        }
-        .sidebar-overlay.show { opacity: 1; pointer-events: auto; }
 
-        .brand { padding: 24px; font-size: 1.5rem; font-weight: 700; background: linear-gradient(to right, #fff, #8b949e); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 1px; }
+        .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.1rem; margin-bottom: 25px; padding: 0 5px; }
 
-        .sidebar-content { padding: 0 24px; flex: 1; }
-        
         .new-chat-btn {
-            width: 100%; padding: 16px; border-radius: var(--radius-md); border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.02); color: #fff; font-weight: 500; font-family: inherit;
-            display: flex; align-items: center; gap: 12px; cursor: pointer; transition: var(--transition-smooth);
-            box-shadow: inset 0 0 0 0 var(--glow-primary); margin-bottom: 32px;
+            display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 15px;
+            background-color: var(--sidebar-hover); color: var(--text-main);
+            border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer;
+            font-size: 14px; font-weight: 500; transition: all 0.2s; margin-bottom: 20px;
         }
-        .new-chat-btn:hover { border-color: var(--glow-primary); background: rgba(139, 92, 246, 0.1); box-shadow: 0 0 20px rgba(139, 92, 246, 0.2); }
+        .new-chat-btn:hover { border-color: #4b5563; background-color: #2a2a2a; }
 
-        .doc-status {
-            background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 16px; position: relative; overflow: hidden;
+        .active-file-box {
+            display: none; padding: 15px; background-color: rgba(16, 185, 129, 0.05);
+            border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px;
+            font-size: 13px; margin-bottom: 15px; border-left: 3px solid var(--accent);
         }
-        .doc-status::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: #4b5563; transition: var(--transition-smooth); }
-        .doc-status.ready::before { background: linear-gradient(to bottom, var(--glow-primary), var(--glow-secondary)); box-shadow: 0 0 15px var(--glow-primary); }
+        .active-file-box p { color: var(--text-muted); font-size: 11px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;}
+        .active-file-box .filename { font-weight: 500; color: var(--text-main); word-break: break-all; }
+
+        .sidebar-bottom { margin-top: auto; padding: 15px 5px; border-top: 1px solid var(--border-color); font-size: 13px; }
+        .status-pill { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-weight: 500; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background-color: var(--danger); box-shadow: 0 0 8px var(--danger); }
+        .dot.active { background-color: var(--success); box-shadow: 0 0 8px var(--success); }
+
+        /* Main Area */
+        .main-area { flex: 1; display: flex; flex-direction: column; position: relative; }
+
+        .drag-overlay {
+            display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(16, 185, 129, 0.05); border: 2px dashed var(--accent); z-index: 200;
+            align-items: center; justify-content: center; font-size: 1.5rem; color: var(--accent); font-weight: 500; backdrop-filter: blur(2px);
+        }
+        .main-area.drag-active .drag-overlay { display: flex; }
+
+        .mobile-header {
+            display: none; padding: 15px 20px; border-bottom: 1px solid var(--border-color);
+            align-items: center; gap: 15px; font-weight: 600; background-color: rgba(20, 20, 20, 0.8); backdrop-filter: blur(10px);
+        }
+        .hamburger { background: none; border: none; color: var(--text-main); cursor: pointer; }
+
+        /* Chat Container */
+        .chat-container { flex: 1; overflow-y: auto; padding: 30px 20px; scroll-behavior: smooth; display: flex; flex-direction: column; gap: 20px; }
+
+        .welcome-screen {
+            margin: auto; text-align: center; color: var(--text-muted); max-width: 450px;
+        }
+        .welcome-screen svg { margin-bottom: 20px; color: var(--text-muted); opacity: 0.5; }
+        .welcome-screen h1 { font-size: 2rem; margin-bottom: 12px; color: var(--text-main); font-weight: 600; letter-spacing: -0.5px;}
+        .welcome-screen p { line-height: 1.6; font-size: 15px; }
+
+        /* Left/Right Message Bubbles */
+        .message-row { display: flex; width: 100%; animation: slideUp 0.3s ease-out forwards; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+
+        .message-row.user { justify-content: flex-end; }
+        .message-row.bot { justify-content: flex-start; }
+
+        .message-wrapper { display: flex; max-width: 85%; gap: 12px; }
+        .message-row.user .message-wrapper { flex-direction: row-reverse; }
+
+        .avatar {
+            width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2); border: 2px solid var(--bg-main);
+        }
+        .avatar.bot { background-color: var(--accent); color: white; }
+        .avatar.user { background: var(--user-bubble); color: white; }
+
+        .bubble {
+            padding: 16px 20px; border-radius: 18px; position: relative; font-size: 15px; line-height: 1.6;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .message-row.user .bubble {
+            background: var(--user-bubble); color: white; border-bottom-right-radius: 4px;
+        }
+        .message-row.bot .bubble {
+            background-color: var(--bot-bubble); color: var(--text-main); border: 1px solid var(--border-color); border-bottom-left-radius: 4px;
+        }
+
+        .meta-info {
+            display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 11px; color: rgba(255,255,255,0.5);
+        }
+        .message-row.bot .meta-info { color: var(--text-muted); }
+
+        /* Advanced Markdown Styling inside Bot Bubble */
+        .bubble.bot p { margin-bottom: 12px; }
+        .bubble.bot p:last-child { margin-bottom: 0; }
+        .bubble.bot strong { color: #fff; font-weight: 600; }
+        .bubble.bot ul, .bubble.bot ol { margin-left: 20px; margin-bottom: 12px; }
+        .bubble.bot li { margin-bottom: 6px; }
+        .bubble.bot pre { background-color: #1a1a1a; padding: 12px; border-radius: 8px; overflow-x: auto; margin-bottom: 12px; border: 1px solid #333; }
+        .bubble.bot code { font-family: monospace; font-size: 13px; }
+        .bubble.bot p code { background-color: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; }
+        .bubble.bot table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+        .bubble.bot th, .bubble.bot td { border: 1px solid #444; padding: 8px; text-align: left; }
+        .bubble.bot th { background-color: #333; }
+
+        .copy-btn {
+            background: none; border: none; color: inherit; cursor: pointer; display: flex; align-items: center; gap: 4px;
+            font-size: 11px; transition: color 0.2s; opacity: 0.7;
+        }
+        .copy-btn:hover { opacity: 1; }
+
+        /* Input Area */
+        .input-area { padding: 20px; display: flex; flex-direction: column; align-items: center; background: linear-gradient(0deg, var(--bg-main) 70%, transparent); }
+
+        .input-box {
+            width: 100%; max-width: 800px; background-color: var(--bg-input); border: 1px solid var(--border-color); border-radius: 16px;
+            display: flex; align-items: flex-end; padding: 10px 14px; transition: all 0.3s ease;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+        }
+        .input-box:focus-within { border-color: #555; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+
+        .attach-btn {
+            background: none; border: none; color: var(--text-muted); width: 40px; height: 40px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; margin-bottom: 2px;
+        }
+        .attach-btn:hover { background-color: rgba(255,255,255,0.08); color: var(--text-main); }
         
-        .doc-title { font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
-        #doc-name { font-size: 1rem; font-weight: 500; word-break: break-all; }
+        .mini-spinner { width: 20px; height: 20px; border: 2px solid var(--text-muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
 
-        /* --- MAIN INTERFACE --- */
-        .main-content { flex: 1; display: flex; flex-direction: column; position: relative; z-index: 10; height: 100%; min-width: 0; }
-
-        .top-nav {
-            padding: 16px 24px; display: flex; align-items: center; gap: 16px;
-            background: transparent; z-index: 20;
+        .input-box textarea {
+            flex: 1; background: transparent; border: none; padding: 12px; color: var(--text-main); font-size: 15px; resize: none; outline: none; max-height: 200px; line-height: 1.5;
         }
-        .menu-btn { background: transparent; border: none; color: var(--text-main); cursor: pointer; display: flex; padding: 8px; border-radius: 8px; }
-        .menu-btn:hover { background: var(--surface-light); }
-
-        /* --- CHAT DISPLAY --- */
-        .chat-area { flex: 1; overflow-y: auto; padding: 24px; scroll-behavior: smooth; display: flex; flex-direction: column; gap: 32px; }
-        .chat-area::-webkit-scrollbar { width: 4px; }
-        .chat-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-
-        .message { display: flex; gap: 20px; animation: floatUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; max-width: 85%; }
-        .message.user { align-self: flex-end; flex-direction: row-reverse; max-width: 75%; }
-
-        .avatar { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: 600; font-size: 1.1rem; }
-        .message.ai .avatar { background: linear-gradient(135deg, var(--glow-primary), var(--glow-secondary)); color: #fff; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4); }
-        .message.user .avatar { background: var(--surface-light); border: 1px solid var(--glass-border); }
-
-        .bubble { padding: 18px 24px; border-radius: var(--radius-xl); font-size: 1.05rem; line-height: 1.6; letter-spacing: 0.3px; position: relative; }
-        
-        .message.ai .bubble {
-            background: rgba(15, 15, 20, 0.7); backdrop-filter: var(--glass-blur);
-            border: 1px solid rgba(255, 255, 255, 0.05); border-top-left-radius: 4px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-        .message.user .bubble {
-            background: linear-gradient(to right, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
-            border: 1px solid rgba(255, 255, 255, 0.1); border-top-right-radius: 4px;
-        }
-
-        .markdown p { margin-bottom: 12px; }
-        .markdown p:last-child { margin-bottom: 0; }
-        .markdown code { font-family: 'Space Mono', monospace; background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 4px; color: var(--glow-secondary); font-size: 0.9em; }
-
-        .typing { display: flex; gap: 6px; padding: 10px 0; }
-        .typing span { width: 6px; height: 6px; background: var(--text-dim); border-radius: 50%; animation: typeBlink 1.4s infinite; }
-        .typing span:nth-child(2) { animation-delay: 0.2s; }
-        .typing span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typeBlink { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.2); background: var(--glow-primary); } }
-
-        /* --- FLOATING INPUT CONSOLE --- */
-        .input-zone { padding: 20px 24px 32px; background: linear-gradient(to top, var(--space-black) 70%, transparent); position: relative; z-index: 20; }
-        
-        .input-console {
-            max-width: 850px; margin: 0 auto; display: flex; align-items: flex-end; gap: 12px;
-            background: rgba(20, 20, 25, 0.6); backdrop-filter: var(--glass-blur);
-            border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius-xl);
-            padding: 12px 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.8); transition: var(--transition-smooth);
-        }
-        .input-console:focus-within { border-color: rgba(139, 92, 246, 0.5); box-shadow: 0 0 30px rgba(139, 92, 246, 0.15), 0 20px 40px rgba(0,0,0,0.8); }
-        .input-console.disabled { opacity: 0.5; pointer-events: none; }
-
-        .tool-btn {
-            width: 44px; height: 44px; border-radius: 50%; background: transparent; border: none; color: var(--text-dim);
-            display: flex; align-items: center; justify-content: center; cursor: pointer; transition: var(--transition-smooth); flex-shrink: 0;
-        }
-        .tool-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-main); }
-        
-        textarea {
-            flex: 1; background: transparent; border: none; color: var(--text-main); font-size: 1.05rem;
-            line-height: 1.5; resize: none; max-height: 150px; min-height: 24px; padding: 10px 0; font-family: inherit;
-        }
-        textarea:focus { outline: none; }
-        textarea::placeholder { color: #4b5563; }
+        .input-box textarea::placeholder { color: #6b7280; }
 
         .send-btn {
-            width: 44px; height: 44px; border-radius: 50%; border: none; flex-shrink: 0; cursor: pointer;
-            background: linear-gradient(135deg, var(--glow-primary), var(--glow-secondary)); color: #fff;
-            display: flex; align-items: center; justify-content: center; transition: var(--transition-smooth);
+            background-color: white; color: black; border: none; width: 40px; height: 40px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; margin-bottom: 2px; margin-left: 8px;
         }
-        .send-btn:disabled { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); }
-        .send-btn:hover:not(:disabled) { transform: scale(1.05); box-shadow: 0 0 15px var(--glow-primary); }
+        .send-btn:hover:not(:disabled) { transform: scale(1.05); }
+        .send-btn:disabled { background-color: #333; color: #555; cursor: not-allowed; transform: none; }
 
-        /* Toast */
-        #toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
-        .toast { background: rgba(20,20,25,0.9); backdrop-filter: blur(10px); border: 1px solid var(--glass-border); padding: 14px 20px; border-radius: var(--radius-md); font-size: 0.9rem; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: toastIn 0.3s forwards; }
-        @keyframes toastIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .footer-text { font-size: 11px; color: #6b7280; margin-top: 15px; text-align: center; font-weight: 500; }
+        .blink { animation: blinker 1s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
 
-        @media (min-width: 768px) {
-            .sidebar { position: static; transform: none; }
-            .sidebar-overlay { display: none; }
-            .menu-btn { display: none; }
-            .message { max-width: 75%; }
-            .message.user { max-width: 60%; }
+        /* Toasts */
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; }
+        .toast { background-color: #262626; color: #fff; padding: 16px 24px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-left: 4px solid var(--accent); margin-bottom: 12px; font-size: 14px; animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-weight: 500; display: flex; align-items: center; gap: 10px;}
+        .toast.error { border-color: var(--danger); }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
+
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; left: -280px; height: 100vh; }
+            .sidebar.active { left: 0; box-shadow: 10px 0 25px rgba(0,0,0,0.6); }
+            .mobile-header { display: flex; }
+            .message-wrapper { max-width: 95%; }
+            .chat-container { padding: 20px 15px; }
         }
     </style>
 </head>
 <body>
 
-    <div class="ambient-light-1"></div>
-    <div class="ambient-light-2"></div>
-    <div id="toast-container"></div>
-    <div class="sidebar-overlay" id="sidebar-overlay"></div>
-
-    <aside class="sidebar" id="sidebar">
-        <div class="brand">PDF Assistant</div>
-        
-        <div class="sidebar-content">
-            <button class="new-chat-btn" onclick="startNewChat()">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> 
-                Initialize Session
-            </button>
-            
-            <div class="doc-status" id="doc-card">
-                <div class="doc-title">Active Database</div>
-                <div id="doc-name" style="color: #4b5563;">Awaiting Document Upload...</div>
+    <div class="layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="brand">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                DocuMind AI
             </div>
-        </div>
-    </aside>
 
-    <main class="main-content">
-        <header class="top-nav">
-            <button class="menu-btn" id="toggle-sidebar">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            <button class="new-chat-btn" id="newChatBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                New Session
             </button>
-        </header>
 
-        <div class="chat-area" id="chat-area">
-            <div class="message ai">
-                <div class="avatar">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                </div>
-                <div class="bubble markdown">
-                    <p>System Online. Upload a PDF blueprint or document to begin structural analysis.</p>
+            <div class="active-file-box" id="activeFileBox">
+                <p>Current Document</p>
+                <div class="filename" id="activeFileName">document.pdf</div>
+            </div>
+
+            <input type="file" id="fileInput" accept=".pdf" hidden>
+
+            <div class="sidebar-bottom">
+                <div class="status-pill">
+                    <div class="dot" id="dbStatusDot"></div>
+                    <span id="dbStatusText">Vector DB Empty</span>
                 </div>
             </div>
-        </div>
+        </aside>
 
-        <div class="input-zone">
-            <input type="file" id="file-upload" accept=".pdf" style="display: none;">
+        <main class="main-area" id="mainArea">
+            <div class="drag-overlay">Release to securely upload PDF</div>
             
-            <div class="input-console" id="main-input-box">
-                <button class="tool-btn" id="attach-btn" title="Upload Document">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            <div class="mobile-header">
+                <button class="hamburger" id="menuBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                 </button>
-                
-                <textarea id="chat-input" rows="1" placeholder="Awaiting document..." disabled></textarea>
-                
-                <button class="send-btn" id="send-btn" disabled>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 2px;"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                </button>
+                <span>DocuMind AI</span>
             </div>
-        </div>
-    </main>
+
+            <div class="chat-container" id="chatContainer">
+                <div class="welcome-screen">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                    <h1>Analyze any Document</h1>
+                    <p>Drag and drop a PDF file anywhere on the screen, or click the paperclip icon below to begin extracting insights.</p>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div class="input-box">
+                    <button class="attach-btn" id="attachBtn" title="Upload PDF">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                    </button>
+                    <textarea id="chatInput" rows="1" placeholder="Ask a question about the document..." required></textarea>
+                    <button id="sendBtn" class="send-btn" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
+                <div class="footer-text">DocuMind AI responses are generated based strictly on your uploaded document context.</div>
+            </div>
+        </main>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
 
     <script>
-        const API_BASE = "https://intelligent-document-rag-production.up.railway.app";
+        const API_URL = "https://intelligent-document-rag-production.up.railway.app";
+
+        const chatContainer = document.getElementById('chatContainer');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const attachBtn = document.getElementById('attachBtn');
+        const fileInput = document.getElementById('fileInput');
+        const mainArea = document.getElementById('mainArea');
+        const dbStatusDot = document.getElementById('dbStatusDot');
+        const dbStatusText = document.getElementById('dbStatusText');
+        const activeFileBox = document.getElementById('activeFileBox');
+        const activeFileName = document.getElementById('activeFileName');
         
-        const chatInput = document.getElementById('chat-input');
-        const sendBtn = document.getElementById('send-btn');
-        const chatArea = document.getElementById('chat-area');
-        const fileUpload = document.getElementById('file-upload');
-        const attachBtn = document.getElementById('attach-btn');
-        const inputBox = document.getElementById('main-input-box');
-        const docName = document.getElementById('doc-name');
-        const docCard = document.getElementById('doc-card');
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('sidebar-overlay');
-        
-        let isWaiting = false;
-        let isDocUploaded = false;
+        const attachIconSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>`;
+        const spinnerHtml = `<div class="mini-spinner"></div>`;
 
-        document.getElementById('toggle-sidebar').addEventListener('click', () => {
-            sidebar.classList.add('open'); overlay.classList.add('show');
-        });
-        overlay.addEventListener('click', () => {
-            sidebar.classList.remove('open'); overlay.classList.remove('show');
+        // Configure Marked.js + Highlight.js for code formatting
+        marked.setOptions({
+            breaks: true, gfm: true,
+            highlight: function (code, lang) {
+                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                return hljs.highlight(code, { language }).value;
+            }
         });
 
-        attachBtn.addEventListener('click', () => fileUpload.click());
+        // Time Helper
+        function getCurrentTime() {
+            return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        }
 
-        fileUpload.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            if (file.type !== "application/pdf") return showToast("Invalid format. PDF required.", "error");
-
-            const formData = new FormData(); formData.append('file', file);
-
-            showToast('Extracting data...', 'info');
-            docName.textContent = "Processing: " + file.name;
-            docCard.classList.remove('ready'); inputBox.classList.add('disabled');
-
-            try {
-                const response = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.detail || "Processing failed");
-
-                isDocUploaded = true;
-                docName.textContent = file.name;
-                docName.style.color = "#fff";
-                docCard.classList.add('ready');
-                
-                inputBox.classList.remove('disabled');
-                chatInput.disabled = false;
-                chatInput.placeholder = "Enter query...";
-                if(window.innerWidth > 768) chatInput.focus();
-                
-                showToast('Document Integration Complete', 'success');
-                appendMessage(`Database updated with **${file.name}**. Ready for queries.`, 'ai');
-            } catch (error) {
-                showToast(error.message, 'error');
-                docName.textContent = "Integration Failed"; docName.style.color = "#ef4444";
-                inputBox.classList.remove('disabled');
-            } finally { fileUpload.value = ''; }
-        });
-
+        // Textarea Auto-resize
         chatInput.addEventListener('input', function() {
-            this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';
-            if (this.value.trim() === "") this.style.height = 'auto';
-            sendBtn.disabled = this.value.trim() === "" || isWaiting || !isDocUploaded;
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+            sendBtn.disabled = this.value.trim() === '';
         });
 
-        chatInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sendBtn.disabled) handleSend(); }
+        // Mobile Sidebar
+        document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.add('active'));
+        mainArea.addEventListener('click', (e) => {
+            if(window.innerWidth <= 768 && !e.target.closest('.mobile-header')) {
+                document.getElementById('sidebar').classList.remove('active');
+            }
         });
 
-        sendBtn.addEventListener('click', handleSend);
-
-        async function handleSend() {
-            const text = chatInput.value.trim();
-            if (!text || isWaiting || !isDocUploaded) return;
-
-            chatInput.value = ''; chatInput.style.height = 'auto'; sendBtn.disabled = true;
-            appendMessage(text, 'user');
-            
-            isWaiting = true; inputBox.classList.add('disabled');
-            const loaderId = appendLoading();
-
+        // Health Check
+        async function checkHealth() {
             try {
-                const response = await fetch(`${API_BASE}/chat`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question: text })
-                });
+                const res = await fetch(`${API_URL}/`);
+                const data = await res.json();
+                if (data.vector_db_loaded) setDBStatus(true);
+            } catch (err) { console.error("Health check failed"); }
+        }
+        checkHealth();
 
-                if (!response.ok) throw new Error("Server malfunction");
-                const data = await response.json();
-                
-                document.getElementById(loaderId).remove();
-                appendMessage(data.answer, 'ai');
-            } catch (error) {
-                document.getElementById(loaderId).remove();
-                showToast(error.message, 'error');
-                appendMessage(`**Error:** ${error.message}`, 'ai');
-            } finally {
-                isWaiting = false; inputBox.classList.remove('disabled');
-                if(window.innerWidth > 768) chatInput.focus();
+        function setDBStatus(ready) {
+            if(ready) {
+                dbStatusDot.classList.add('active'); dbStatusText.textContent = 'Engine Ready';
+            } else {
+                dbStatusDot.classList.remove('active'); dbStatusText.textContent = 'Awaiting Document';
             }
         }
 
-        function appendMessage(text, sender) {
-            const div = document.createElement('div');
-            div.className = `message ${sender}`;
-            const isAI = sender === 'ai';
-            const icon = isAI 
-                ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>' 
-                : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>';
+        // --- UPLOAD ---
+        attachBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) uploadFile(e.target.files[0]);
+        });
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => mainArea.addEventListener(e, ev => ev.preventDefault()));
+        mainArea.addEventListener('dragenter', () => mainArea.classList.add('drag-active'));
+        mainArea.addEventListener('dragleave', (e) => {
+            if (e.relatedTarget === null || !mainArea.contains(e.relatedTarget)) mainArea.classList.remove('drag-active');
+        });
+        mainArea.addEventListener('drop', (e) => {
+            mainArea.classList.remove('drag-active');
+            if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+        });
+
+        async function uploadFile(file) {
+            if (file.type !== 'application/pdf') return showToast('Please upload a valid PDF file.', 'error');
             
-            let content = isAI ? parseMarkdown(text) : escapeHtml(text).replace(/\n/g, '<br>');
+            const formData = new FormData();
+            formData.append('file', file);
             
-            div.innerHTML = `<div class="avatar">${icon}</div><div class="bubble ${isAI?'markdown':''}">${content}</div>`;
-            chatArea.appendChild(div);
-            setTimeout(() => chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' }), 50);
+            attachBtn.innerHTML = spinnerHtml; attachBtn.disabled = true;
+            chatInput.placeholder = "Reading and indexing PDF..."; chatInput.disabled = true;
+            
+            try {
+                const res = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if(res.ok) {
+                    showToast('PDF successfully analyzed!');
+                    setDBStatus(true);
+                    activeFileName.textContent = file.name; activeFileBox.style.display = 'block';
+                    if(document.querySelector('.welcome-screen')) chatContainer.innerHTML = '';
+                    addMessage('bot', `I've successfully processed **${file.name}**. I'm ready to answer any questions based on this document.`);
+                } else throw new Error(data.detail);
+            } catch (err) {
+                showToast(err.message || 'Error processing document.', 'error');
+            } finally {
+                attachBtn.innerHTML = attachIconSvg; attachBtn.disabled = false;
+                chatInput.placeholder = "Ask a question about the document..."; chatInput.disabled = false;
+                fileInput.value = ''; chatInput.focus();
+            }
         }
 
-        function appendLoading() {
-            const id = 'l-' + Date.now();
+        // --- CHAT ---
+        sendBtn.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keydown', (e) => {
+            if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if(!sendBtn.disabled) sendMessage(); }
+        });
+
+        async function sendMessage() {
+            const text = chatInput.value.trim();
+            if(!text) return;
+
+            if(document.querySelector('.welcome-screen')) chatContainer.innerHTML = '';
+            
+            addMessage('user', text);
+            chatInput.value = ''; chatInput.style.height = 'auto'; sendBtn.disabled = true;
+
+            const typingId = addTyping();
+
+            try {
+                const res = await fetch(`${API_URL}/chat`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: text })
+                });
+                const data = await res.json();
+                document.getElementById(typingId).remove();
+                
+                if(res.ok) addMessage('bot', data.answer);
+                else throw new Error(data.detail);
+            } catch (err) {
+                document.getElementById(typingId).remove();
+                addMessage('bot', 'Error connecting to the AI engine: ' + err.message);
+            } finally {
+                sendBtn.disabled = false; chatInput.focus();
+            }
+        }
+
+        function addMessage(sender, text) {
             const div = document.createElement('div');
-            div.className = 'message ai'; div.id = id;
-            div.innerHTML = `<div class="avatar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
-                             <div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>`;
-            chatArea.appendChild(div);
-            setTimeout(() => chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' }), 50);
+            div.className = `message-row ${sender}`;
+            
+            const timeStr = getCurrentTime();
+            const formatted = sender === 'bot' ? marked.parse(text) : text.replace(/\n/g, '<br>');
+            
+            const icon = sender === 'bot' 
+                ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><rect x="6" y="8" width="12" height="10" rx="2"></rect></svg>' 
+                : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>';
+
+            const copyHtml = sender === 'bot' ? `
+                <button class="copy-btn" onclick="copyText(this, \`${text.replace(/"/g, '&quot;').replace(/`/g, '\\`')}\`)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy
+                </button>
+            ` : '';
+
+            div.innerHTML = `
+                <div class="message-wrapper">
+                    <div class="avatar ${sender}">${icon}</div>
+                    <div class="bubble ${sender}">
+                        <div class="message-text">${formatted}</div>
+                        <div class="meta-info">
+                            <span>${timeStr}</span>
+                            ${copyHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+            chatContainer.appendChild(div);
+            
+            // Syntax Highlight dynamically added code blocks
+            div.querySelectorAll('pre code').forEach((block) => { hljs.highlightElement(block); });
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function addTyping() {
+            const id = 'type-' + Date.now();
+            const div = document.createElement('div');
+            div.className = 'message-row bot';
+            div.id = id;
+            div.innerHTML = `
+                <div class="message-wrapper">
+                    <div class="avatar bot"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><rect x="6" y="8" width="12" height="10" rx="2"></rect></svg></div>
+                    <div class="bubble bot" style="display:flex; align-items:center; height: 50px;">
+                        <span class="blink">● ● ●</span>
+                    </div>
+                </div>
+            `;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
             return id;
         }
 
-        window.startNewChat = () => {
-            if(!isDocUploaded) return showToast("No active document.", "info");
-            chatArea.innerHTML = '';
-            appendMessage(`Session re-initialized for **${docName.textContent}**.`, 'ai');
-            if (window.innerWidth <= 768) { sidebar.classList.remove('open'); overlay.classList.remove('show'); }
-        };
-
-        function showToast(msg) {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div'); toast.className = 'toast';
-            toast.innerHTML = `<span>${escapeHtml(msg)}</span>`;
-            container.appendChild(toast);
-            setTimeout(() => { toast.style.opacity = '0'; setTimeout(()=>toast.remove(), 300); }, 3000);
+        window.copyText = function(btn, text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!`;
+                btn.style.color = "#10b981";
+                setTimeout(() => { btn.innerHTML = originalHtml; btn.style.color = "inherit"; }, 2000);
+            });
         }
 
-        function escapeHtml(text) { return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-        function parseMarkdown(text) {
-            let p = escapeHtml(text).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`([^`]+)`/g, '<code>$1</code>');
-            return p.split('\n\n').filter(x=>x.trim()!='').map(x => `<p>${x.replace(/\n/g, '<br>')}</p>`).join('');
+        document.getElementById('newChatBtn').addEventListener('click', () => {
+            chatContainer.innerHTML = `
+                <div class="welcome-screen">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                    <h1>Analyze any Document</h1>
+                    <p>Drag and drop a PDF file anywhere on the screen, or click the paperclip icon below to begin extracting insights.</p>
+                </div>
+            `;
+        });
+
+        function showToast(msg, type='success') {
+            const box = document.createElement('div');
+            box.className = `toast ${type}`;
+            
+            const icon = type === 'success' 
+                ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+                : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+                
+            box.innerHTML = `${icon} <span>${msg}</span>`;
+            document.getElementById('toastContainer').appendChild(box);
+            setTimeout(() => {
+                box.style.animation = 'slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) reverse forwards';
+                setTimeout(() => box.remove(), 300);
+            }, 3000);
         }
     </script>
 </body>
