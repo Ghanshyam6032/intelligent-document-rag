@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <!-- Prevent zoom on input focus and lock scaling -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DocuMind AI | Advanced PDF Analytics</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -32,7 +31,6 @@
 
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         
-        /* Fixed Mobile Viewport Foundation */
         body, html { 
             height: 100%; 
             height: 100dvh; 
@@ -40,7 +38,7 @@
             background-color: var(--bg-main); 
             color: var(--text-main); 
             overflow: hidden; 
-            position: fixed; /* Prevents whole-page elastic scroll rubber-banding on iOS/Android */
+            position: fixed;
         }
         
         .layout { display: flex; height: 100%; width: 100%; position: relative; }
@@ -86,67 +84,65 @@
         .main-area.drag-active .drag-overlay { display: flex; }
 
         .mobile-header {
-            display: none; padding: 12px 16px; border-bottom: 1px solid var(--border-color);
-            align-items: center; gap: 15px; font-weight: 600; background-color: var(--bg-main);
+            display: none; padding: 10px 14px; border-bottom: 1px solid var(--border-color);
+            align-items: center; gap: 12px; font-weight: 600; background-color: var(--bg-main);
             flex-shrink: 0; z-index: 10;
         }
         .hamburger { background: none; border: none; color: var(--text-main); cursor: pointer; display: flex; align-items: center; }
 
         /* Chat Container */
-        .chat-container { flex: 1; overflow-y: auto; padding: 20px 16px; scroll-behavior: smooth; display: flex; flex-direction: column; gap: 20px; -webkit-overflow-scrolling: touch; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 16px 12px; scroll-behavior: smooth; display: flex; flex-direction: column; gap: 16px; -webkit-overflow-scrolling: touch; }
 
         .welcome-screen { margin: auto; text-align: center; color: var(--text-muted); max-width: 450px; padding: 20px; }
-        .welcome-screen svg { margin-bottom: 20px; color: var(--text-muted); opacity: 0.5; }
-        .welcome-screen h1 { font-size: 1.6rem; margin-bottom: 12px; color: var(--text-main); font-weight: 600; letter-spacing: -0.5px;}
-        .welcome-screen p { line-height: 1.6; font-size: 14px; }
+        .welcome-screen svg { margin-bottom: 15px; color: var(--text-muted); opacity: 0.5; }
+        .welcome-screen h1 { font-size: 1.5rem; margin-bottom: 10px; color: var(--text-main); font-weight: 600; }
+        .welcome-screen p { line-height: 1.5; font-size: 13px; }
 
-        /* Left/Right Message Bubbles */
         .message-row { display: flex; width: 100%; animation: slideUp 0.3s ease-out forwards; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
         .message-row.user { justify-content: flex-end; }
         .message-row.bot { justify-content: flex-start; }
 
-        .message-wrapper { display: flex; max-width: 85%; gap: 12px; }
+        .message-wrapper { display: flex; max-width: 88%; gap: 10px; }
         .message-row.user .message-wrapper { flex-direction: row-reverse; }
 
         .avatar {
-            width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
             box-shadow: 0 4px 10px rgba(0,0,0,0.2); border: 2px solid var(--bg-main);
         }
         .avatar.bot { background-color: var(--accent); color: white; }
         .avatar.user { background: var(--user-bubble); color: white; }
 
         .bubble {
-            padding: 14px 18px; border-radius: 18px; position: relative; font-size: 15px; line-height: 1.5;
+            padding: 12px 16px; border-radius: 16px; position: relative; font-size: 14px; line-height: 1.5;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1); word-break: break-word;
         }
         .message-row.user .bubble { background: var(--user-bubble); color: white; border-bottom-right-radius: 4px; }
         .message-row.bot .bubble { background-color: var(--bot-bubble); color: var(--text-main); border: 1px solid var(--border-color); border-bottom-left-radius: 4px; }
 
-        .meta-info { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 11px; color: rgba(255,255,255,0.5); }
+        .meta-info { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 10px; color: rgba(255,255,255,0.5); }
         .message-row.bot .meta-info { color: var(--text-muted); }
 
-        /* Markdown Styling inside Bot Bubble */
-        .bubble.bot p { margin-bottom: 10px; }
+        .bubble.bot p { margin-bottom: 8px; }
         .bubble.bot p:last-child { margin-bottom: 0; }
         .bubble.bot strong { color: #fff; font-weight: 600; }
-        .bubble.bot ul, .bubble.bot ol { margin-left: 20px; margin-bottom: 10px; }
+        .bubble.bot ul, .bubble.bot ol { margin-left: 16px; margin-bottom: 8px; }
         .bubble.bot li { margin-bottom: 4px; }
-        .bubble.bot pre { background-color: #1a1a1a; padding: 12px; border-radius: 8px; overflow-x: auto; margin-bottom: 10px; border: 1px solid #333; }
-        .bubble.bot code { font-family: monospace; font-size: 13px; }
-        .bubble.bot p code { background-color: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; }
-        .bubble.bot table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-        .bubble.bot th, .bubble.bot td { border: 1px solid #444; padding: 8px; text-align: left; }
+        .bubble.bot pre { background-color: #1a1a1a; padding: 10px; border-radius: 6px; overflow-x: auto; margin-bottom: 8px; border: 1px solid #333; }
+        .bubble.bot code { font-family: monospace; font-size: 12px; }
+        .bubble.bot p code { background-color: rgba(255,255,255,0.1); padding: 2px 5px; border-radius: 4px; }
+        .bubble.bot table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+        .bubble.bot th, .bubble.bot td { border: 1px solid #444; padding: 6px; text-align: left; }
         .bubble.bot th { background-color: #333; }
 
-        .copy-btn { background: none; border: none; color: inherit; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 11px; transition: color 0.2s; opacity: 0.7; }
+        .copy-btn { background: none; border: none; color: inherit; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 10px; opacity: 0.7; }
         .copy-btn:hover { opacity: 1; }
 
-        /* Input Area with Safe Area Padding */
+        /* Single-Line Compact Input Area Layout */
         .input-area { 
-            padding: 12px 16px; 
-            padding-bottom: max(12px, env(safe-area-inset-bottom));
+            padding: 8px 12px; 
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
             display: flex; flex-direction: column; align-items: center; 
             background: var(--bg-main); 
             flex-shrink: 0;
@@ -154,36 +150,34 @@
         }
 
         .input-box {
-            width: 100%; max-width: 800px; background-color: var(--bg-input); border: 1px solid var(--border-color); border-radius: 16px;
-            display: flex; align-items: flex-end; padding: 8px 12px; transition: all 0.3s ease;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            width: 100%; max-width: 800px; background-color: var(--bg-input); border: 1px solid var(--border-color); border-radius: 14px;
+            display: flex; align-items: center; padding: 4px 8px; transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         }
         .input-box:focus-within { border-color: #555; }
 
-        .attach-btn { background: none; border: none; color: var(--text-muted); width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; margin-bottom: 2px; flex-shrink: 0; }
+        .attach-btn { background: none; border: none; color: var(--text-muted); width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
         .attach-btn:hover { background-color: rgba(255,255,255,0.08); color: var(--text-main); }
         
-        .mini-spinner { width: 20px; height: 20px; border: 2px solid var(--text-muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        .mini-spinner { width: 18px; height: 18px; border: 2px solid var(--text-muted); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
 
-        .input-box textarea { flex: 1; background: transparent; border: none; padding: 10px 8px; color: var(--text-main); font-size: 16px; /* 16px prevents iOS auto-zoom on focus */ resize: none; outline: none; max-height: 120px; line-height: 1.4; }
+        .input-box textarea { flex: 1; background: transparent; border: none; padding: 8px 6px; color: var(--text-main); font-size: 16px; resize: none; outline: none; max-height: 100px; line-height: 1.3; }
         .input-box textarea::placeholder { color: #6b7280; }
 
-        .send-btn { background-color: white; color: black; border: none; width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; margin-bottom: 2px; margin-left: 6px; flex-shrink: 0; }
+        .send-btn { background-color: white; color: black; border: none; width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 6px; flex-shrink: 0; }
         .send-btn:hover:not(:disabled) { transform: scale(1.05); }
-        .send-btn:disabled { background-color: #333; color: #555; cursor: not-allowed; transform: none; }
+        .send-btn:disabled { background-color: #333; color: #555; cursor: not-allowed; }
 
-        .footer-text { font-size: 10px; color: #6b7280; margin-top: 8px; text-align: center; font-weight: 500; }
+        .footer-text { font-size: 9px; color: #6b7280; margin-top: 4px; text-align: center; font-weight: 500; }
         .blink { animation: blinker 1s linear infinite; }
         @keyframes blinker { 50% { opacity: 0; } }
 
-        /* Toasts */
-        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; }
-        .toast { background-color: #262626; color: #fff; padding: 14px 20px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-left: 4px solid var(--accent); margin-bottom: 12px; font-size: 13px; animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-weight: 500; display: flex; align-items: center; gap: 10px;}
+        .toast-container { position: fixed; top: 15px; right: 15px; z-index: 1000; }
+        .toast { background-color: #262626; color: #fff; padding: 12px 18px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-left: 4px solid var(--accent); margin-bottom: 10px; font-size: 13px; animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-weight: 500; display: flex; align-items: center; gap: 8px;}
         .toast.error { border-color: var(--danger); }
         @keyframes slideIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
 
-        /* Mobile specific overrides */
         @media (max-width: 768px) {
             .sidebar { position: fixed; left: -280px; height: 100%; height: 100dvh; }
             .sidebar.active { left: 0; box-shadow: 10px 0 25px rgba(0,0,0,0.6); }
@@ -194,7 +188,7 @@
 </head>
 <body>
 
-    <div class="layout">
+    <div class="layout" id="appLayout">
         <aside class="sidebar" id="sidebar">
             <div class="brand">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
@@ -226,27 +220,27 @@
             
             <div class="mobile-header">
                 <button class="hamburger" id="menuBtn">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                 </button>
                 <span>DocuMind AI</span>
             </div>
 
             <div class="chat-container" id="chatContainer">
                 <div class="welcome-screen">
-                    <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
                     <h1>Analyze any Document</h1>
                     <p>Drag and drop a PDF file anywhere, or click the paperclip icon below to begin.</p>
                 </div>
             </div>
 
-            <div class="input-area">
+            <div class="input-area" id="inputArea">
                 <div class="input-box">
                     <button class="attach-btn" id="attachBtn" title="Upload PDF">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
                     </button>
                     <textarea id="chatInput" rows="1" placeholder="Ask a question about the document..." required></textarea>
                     <button id="sendBtn" class="send-btn" disabled>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                     </button>
                 </div>
                 <div class="footer-text">Responses are generated based strictly on your uploaded document context.</div>
@@ -265,15 +259,15 @@
         const attachBtn = document.getElementById('attachBtn');
         const fileInput = document.getElementById('fileInput');
         const mainArea = document.getElementById('mainArea');
+        const appLayout = document.getElementById('appLayout');
         const dbStatusDot = document.getElementById('dbStatusDot');
         const dbStatusText = document.getElementById('dbStatusText');
         const activeFileBox = document.getElementById('activeFileBox');
         const activeFileName = document.getElementById('activeFileName');
         
-        const attachIconSvg = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>`;
+        const attachIconSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>`;
         const spinnerHtml = `<div class="mini-spinner"></div>`;
 
-        // Configure Marked.js + Highlight.js for code formatting
         marked.setOptions({
             breaks: true, gfm: true,
             highlight: function (code, lang) {
@@ -282,10 +276,11 @@
             }
         });
 
-        // Visual Viewport API fix for mobile software keyboards popping up
+        // Fixed Viewport resize observer to instantly resize container when mobile keyboard pops up
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', () => {
-                document.body.style.height = window.visualViewport.height + 'px';
+                appLayout.style.height = window.visualViewport.height + 'px';
+                window.scrollTo(0, 0);
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             });
         }
@@ -294,14 +289,12 @@
             return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
         }
 
-        // Textarea Auto-resize
         chatInput.addEventListener('input', function() {
             this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
             sendBtn.disabled = this.value.trim() === '';
         });
 
-        // Mobile Sidebar Toggle
         document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('sidebar').classList.add('active'));
         mainArea.addEventListener('click', (e) => {
             if(window.innerWidth <= 768 && !e.target.closest('.mobile-header')) {
@@ -415,12 +408,12 @@
             const formatted = sender === 'bot' ? marked.parse(text) : text.replace(/\n/g, '<br>');
             
             const icon = sender === 'bot' 
-                ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><rect x="6" y="8" width="12" height="10" rx="2"></rect></svg>' 
-                : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>';
+                ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><rect x="6" y="8" width="12" height="10" rx="2"></rect></svg>' 
+                : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>';
 
             const copyHtml = sender === 'bot' ? `
                 <button class="copy-btn" onclick="copyText(this, \`${text.replace(/"/g, '&quot;').replace(/`/g, '\\`')}\`)">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy
                 </button>
             ` : '';
 
@@ -449,8 +442,8 @@
             div.id = id;
             div.innerHTML = `
                 <div class="message-wrapper">
-                    <div class="avatar bot"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><rect x="6" y="8" width="12" height="10" rx="2"></rect></svg></div>
-                    <div class="bubble bot" style="display:flex; align-items:center; height: 42px;">
+                    <div class="avatar bot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><rect x="6" y="8" width="12" height="10" rx="2"></rect></svg></div>
+                    <div class="bubble bot" style="display:flex; align-items:center; height: 38px;">
                         <span class="blink">● ● ●</span>
                     </div>
                 </div>
@@ -463,7 +456,7 @@
         window.copyText = function(btn, text) {
             navigator.clipboard.writeText(text).then(() => {
                 const originalHtml = btn.innerHTML;
-                btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!`;
+                btn.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!`;
                 btn.style.color = "#10b981";
                 setTimeout(() => { btn.innerHTML = originalHtml; btn.style.color = "inherit"; }, 2000);
             });
@@ -472,7 +465,7 @@
         document.getElementById('newChatBtn').addEventListener('click', () => {
             chatContainer.innerHTML = `
                 <div class="welcome-screen">
-                    <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
                     <h1>Analyze any Document</h1>
                     <p>Drag and drop a PDF file anywhere, or click the paperclip icon below to begin.</p>
                 </div>
