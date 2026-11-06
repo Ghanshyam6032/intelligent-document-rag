@@ -1,0 +1,25 @@
+# API & Server
+fastapi
+uvicorn
+python-multipart
+pydantic
+pydantic-settings
+python-dotenv
+
+# LangChain & LLM
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-groq
+langchain-huggingface
+
+# Embeddings & Vector DB
+sentence-transformers
+faiss-cpu
+torch
+
+# PDF Processing
+pypdf
+
+# Deployment
+modal

@@ -1,0 +1,6 @@
+﻿.venv/
+.venv_old/
+__pycache__/
+.env
+faiss_store/
+*.pdf
